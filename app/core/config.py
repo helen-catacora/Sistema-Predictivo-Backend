@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     app_name: str = "Sistema Predictivo API"
     debug: bool = False
 
+    # JWT
+    jwt_secret_key: str = "cambiar-en-produccion-clave-secreta-muy-segura"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24  # 24 horas
+
     # PostgreSQL 17
     postgres_host: str = "127.0.0.1"
     postgres_port: int = 5432
