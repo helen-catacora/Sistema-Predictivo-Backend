@@ -1,15 +1,17 @@
-"""Esquemas para materias."""
+"""Esquemas para materias (desde malla curricular)."""
 from pydantic import BaseModel, Field
 
 
 class MateriaItem(BaseModel):
-    """Materia con id y nombre."""
+    """Materia en la malla curricular: id, nombre, area_id y semestre_id."""
 
     id: int = Field(description="ID de la materia")
-    nombre: str = Field(description="Nombre de la materia (ej. Algebra (T), Fisica I (L))")
+    nombre: str = Field(description="Nombre de la materia")
+    area_id: int | None = Field(default=None, description="ID del área en la malla")
+    semestre_id: int | None = Field(default=None, description="ID del semestre en la malla")
 
 
 class MateriaListResponse(BaseModel):
-    """Respuesta del listado de materias."""
+    """Respuesta del listado de materias (desde malla_curricular)."""
 
-    materias: list[MateriaItem] = Field(description="Lista de materias")
+    materias: list[MateriaItem] = Field(description="Lista de materias en la malla curricular")

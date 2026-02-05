@@ -3,6 +3,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -112,6 +113,15 @@ def custom_openapi():
 
 
 app.openapi = custom_openapi
+
+# CORS: permitir acceso desde cualquier origen (frontend en otro puerto/dominio)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Router API (incluye auth y rutas /me, /)
 app.include_router(api_router, prefix="/api/v1")

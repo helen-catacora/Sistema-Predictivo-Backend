@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS paralelos (
     id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     nombre text NOT NULL,
     area_id bigint NOT NULL REFERENCES areas(id),
+    semestre_id bigint REFERENCES semestres(id),
     encargado_id bigint NOT NULL REFERENCES usuarios(id),
     UNIQUE(nombre, area_id)
 );

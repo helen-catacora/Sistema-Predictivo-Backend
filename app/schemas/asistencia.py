@@ -28,6 +28,7 @@ class AsistenciaDiaUpdateRequest(BaseModel):
 class AsistenciaDiaItem(BaseModel):
     """Fila de asistencia del día por estudiante (materia + paralelo)."""
 
+    estudiante_id: int = Field(description="ID del estudiante")
     materia_id: int = Field(description="ID de la materia consultada (siempre el del request)")
     paralelo_id: int = Field(description="ID del paralelo")
     paralelo: str = Field(description="Nombre del paralelo")

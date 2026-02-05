@@ -88,6 +88,7 @@ async def listar_asistencia_dia(
         nombre_completo = f"{e.nombre} {e.apellido}".strip()
         items.append(
             AsistenciaDiaItem(
+                estudiante_id=e.id,
                 materia_id=materia_id,
                 paralelo_id=paralelo_id,
                 paralelo=nombre_paralelo,
