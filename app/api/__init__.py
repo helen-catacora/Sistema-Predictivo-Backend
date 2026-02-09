@@ -2,7 +2,17 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.endpoints import asistencias, estudiantes, materias, paralelos, usuarios
+from app.api.endpoints import (
+    alertas,
+    asistencias,
+    estudiantes,
+    gestiones,
+    materias,
+    paralelos,
+    predicciones,
+    reportes,
+    usuarios,
+)
 from app.api.endpoints.auth import get_current_user, get_modulos_for_usuario
 from app.core.database import get_db
 from app.models import Usuario
@@ -14,6 +24,10 @@ router.include_router(paralelos.router)
 router.include_router(materias.router)
 router.include_router(asistencias.router)
 router.include_router(usuarios.router)
+router.include_router(predicciones.router)
+router.include_router(alertas.router)
+router.include_router(gestiones.router)
+router.include_router(reportes.router)
 
 
 @router.get(

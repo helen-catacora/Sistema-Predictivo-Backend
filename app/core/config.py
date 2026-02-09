@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     app_name: str = "Sistema Predictivo API"
     debug: bool = False
 
+    # Machine Learning
+    ml_model_dir: str = "ml_models"
+
     # JWT
     jwt_secret_key: str = "cambiar-en-produccion-clave-secreta-muy-segura"
     jwt_algorithm: str = "HS256"

@@ -1,7 +1,8 @@
 """Modelo Estudiante."""
+from datetime import date
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, ForeignKey, Identity, Text
+from sqlalchemy import BigInteger, Date, ForeignKey, Identity, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -23,6 +24,17 @@ class Estudiante(Base):
     nombre: Mapped[str] = mapped_column(Text, nullable=False)
     apellido: Mapped[str] = mapped_column(Text, nullable=False)
     paralelo_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("paralelos.id"), nullable=False)
+
+    # Datos sociodemográficos (nullable para compatibilidad con registros existentes)
+    fecha_nacimiento: Mapped[date | None] = mapped_column(Date, nullable=True)
+    genero: Mapped[str | None] = mapped_column(Text, nullable=True)
+    grado: Mapped[str | None] = mapped_column(Text, nullable=True)
+    estrato_socioeconomico: Mapped[str | None] = mapped_column(Text, nullable=True)  # Alto, Bajo, Medio
+    ocupacion_laboral: Mapped[str | None] = mapped_column(Text, nullable=True)
+    con_quien_vive: Mapped[str | None] = mapped_column(Text, nullable=True)
+    apoyo_economico: Mapped[str | None] = mapped_column(Text, nullable=True)
+    modalidad_ingreso: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tipo_colegio: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     paralelo: Mapped["Paralelo"] = relationship("Paralelo", back_populates="estudiantes")
     inscripciones: Mapped[list["Inscripcion"]] = relationship(

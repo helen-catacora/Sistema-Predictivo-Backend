@@ -12,6 +12,10 @@ from app.models.asistencia import Asistencia, EstadoAsistencia
 from app.models.prediccion import Prediccion, NivelRiesgo
 from app.models.accion import Accion
 from app.models.modulo import Modulo, UsuarioModulo
+from app.models.gestion_academica import GestionAcademica
+from app.models.lote_prediccion import LotePrediccion, EstadoLote
+from app.models.alerta import Alerta, TipoAlerta, EstadoAlerta
+from app.models.reporte_generado import ReporteGenerado
 
 __all__ = [
     "Rol",
@@ -30,4 +34,11 @@ __all__ = [
     "Accion",
     "Modulo",
     "UsuarioModulo",
+    "GestionAcademica",
+    "LotePrediccion",
+    "EstadoLote",
+    "Alerta",
+    "TipoAlerta",
+    "EstadoAlerta",
+    "ReporteGenerado",
 ]

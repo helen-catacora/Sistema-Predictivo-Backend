@@ -1,4 +1,5 @@
 """Punto de entrada de la aplicación FastAPI."""
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -8,11 +9,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import router as api_router
+from app.core.config import settings
 from app.core.database import get_db, init_db
 from app.core.security import create_access_token, verify_password
 from app.models import *  # noqa: F401, F403 - Registra modelos en Base.metadata antes de init_db
 from app.models import Usuario
 from app.schemas.auth import LoginRequest, TokenResponse
+from app.services.prediccion_service import PrediccionService
+
+logger = logging.getLogger(__name__)
 
 # Documentación Swagger: disponible en /docs (OpenAPI 3.0)
 OPENAPI_TAGS = [
@@ -45,6 +50,22 @@ OPENAPI_TAGS = [
         "description": "Listado de usuarios (nombre, correo, rol, estado).",
     },
     {
+        "name": "predicciones",
+        "description": "Predicción de abandono estudiantil: individual, masiva (Excel), historial, lotes y dashboard.",
+    },
+    {
+        "name": "alertas",
+        "description": "Alertas de riesgo de abandono: listado, filtros y actualización de estado.",
+    },
+    {
+        "name": "gestiones",
+        "description": "Gestiones académicas: crear, listar y activar períodos académicos.",
+    },
+    {
+        "name": "reportes",
+        "description": "Generación de reportes PDF: predictivo general, estudiantes en riesgo, por paralelo, asistencia e individual.",
+    },
+    {
         "name": "salud",
         "description": "Comprobación del estado del servicio.",
     },
@@ -55,8 +76,20 @@ OPENAPI_TAGS = [
 async def lifespan(app: FastAPI):
     """Gestiona el ciclo de vida: inicio y cierre de la aplicación."""
     await init_db()
+
+    # Cargar modelo ML
+    try:
+        app.state.prediccion_service = PrediccionService(settings.ml_model_dir)
+        logger.info("Modelo ML cargado desde '%s'", settings.ml_model_dir)
+    except FileNotFoundError:
+        logger.warning(
+            "No se encontraron artefactos ML en '%s'. "
+            "El endpoint de predicciones no estará disponible hasta copiar los .pkl.",
+            settings.ml_model_dir,
+        )
+        app.state.prediccion_service = None
+
     yield
-    pass
 
 
 app = FastAPI(

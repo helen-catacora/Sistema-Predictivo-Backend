@@ -9,6 +9,7 @@ from app.core.database import Base
 if TYPE_CHECKING:
     from app.models.student import Estudiante
     from app.models.subject import Materia
+    from app.models.gestion_academica import GestionAcademica
 
 
 class Inscripcion(Base):
@@ -30,6 +31,10 @@ class Inscripcion(Base):
         BigInteger, ForeignKey("materias.id"), nullable=False
     )
     gestion_academica: Mapped[str] = mapped_column(Text, nullable=False)
+    gestion_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("gestiones_academicas.id"), nullable=True
+    )
 
     estudiante: Mapped["Estudiante"] = relationship("Estudiante", back_populates="inscripciones")
     materia: Mapped["Materia"] = relationship("Materia", back_populates="inscripciones")
+    gestion: Mapped["GestionAcademica | None"] = relationship("GestionAcademica")
