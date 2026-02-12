@@ -43,6 +43,10 @@ async def listar_usuarios(
             nombre=u.nombre,
             correo=u.email,
             rol=u.rol.nombre if u.rol else "",
+            rol_id=u.rol_id,
+            carnet_identidad=u.carnet_identidad,
+            telefono=u.telefono,
+            cargo=u.cargo,
             estado=u.estado,
             modulos=[m.id for m in u.modulos],
         )

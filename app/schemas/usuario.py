@@ -1,4 +1,4 @@
-"""Esquemas para listado y creación de usuarios."""
+
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
@@ -51,6 +51,10 @@ class UsuarioListItem(BaseModel):
     nombre: str = Field(description="Nombre del usuario")
     correo: str = Field(description="Correo electrónico")
     rol: str = Field(description="Nombre del rol (ej. Administrador)")
+    rol_id: int | None = Field(default=None, description="ID del rol")
+    carnet_identidad: str | None = Field(default=None, description="Carnet de identidad")
+    telefono: str | None = Field(default=None, description="Teléfono")
+    cargo: str | None = Field(default=None, description="Cargo")
     estado: str = Field(description="Estado: activo o inactivo")
     modulos: list[int] = Field(default_factory=list, description="IDs de los módulos asignados al usuario")
 

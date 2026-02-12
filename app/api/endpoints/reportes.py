@@ -76,7 +76,7 @@ TIPOS_INFO = [
     summary="Tipos de reporte disponibles",
 )
 async def listar_tipos(
-    _: Usuario = Depends(require_module("Reportes")),
+    _: Usuario = Depends(require_module("reportes")),
 ):
     return TiposReporteResponse(tipos=TIPOS_INFO)
 
@@ -91,7 +91,7 @@ async def listar_tipos(
 )
 async def historial_reportes(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Reportes")),
+    _: Usuario = Depends(require_module("reportes")),
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
@@ -138,15 +138,13 @@ async def historial_reportes(
 async def generar_reporte(
     body: ReporteGenerarRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: Usuario = Depends(require_module("Reportes")),
+    current_user: Usuario = Depends(require_module("reportes")),
 ):
-    # Validaciones previas
     if body.tipo == "por_paralelo" and not body.paralelo_id:
         raise HTTPException(status_code=400, detail="paralelo_id es requerido para el reporte por_paralelo")
     if body.tipo == "individual" and not body.estudiante_id:
         raise HTTPException(status_code=400, detail="estudiante_id es requerido para el reporte individual")
 
-    # Generar PDF según tipo
     if body.tipo == "predictivo_general":
         pdf_bytes, nombre = await _generar_predictivo_general(db, body)
     elif body.tipo == "estudiantes_riesgo":
@@ -160,7 +158,6 @@ async def generar_reporte(
     else:
         raise HTTPException(status_code=400, detail="Tipo de reporte no válido")
 
-    # Guardar metadatos
     registro = ReporteGenerado(
         tipo=body.tipo,
         nombre=nombre,
@@ -170,7 +167,6 @@ async def generar_reporte(
     db.add(registro)
     await db.commit()
 
-    # Devolver PDF como descarga
     filename = f"{nombre.replace(' ', '_')}.pdf"
     return StreamingResponse(
         BytesIO(pdf_bytes),
