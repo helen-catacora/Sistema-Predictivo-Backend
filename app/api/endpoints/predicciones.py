@@ -69,7 +69,7 @@ def get_prediccion_service(request: Request) -> PrediccionService:
 async def prediccion_individual(
     body: PrediccionIndividualRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: Usuario = Depends(require_module("predicciones")),
+    current_user: Usuario = Depends(require_module("Visualización de Resultados")),
     ml: PrediccionService = Depends(get_prediccion_service),
 ):
     # Buscar estudiante con su paralelo → semestre y área
@@ -137,7 +137,7 @@ async def prediccion_individual(
 async def prediccion_masiva(
     archivo: UploadFile = File(..., description="Archivo Excel (.xlsx)"),
     db: AsyncSession = Depends(get_db),
-    current_user: Usuario = Depends(require_module("predicciones")),
+    current_user: Usuario = Depends(require_module("Visualización de Resultados")),
     ml: PrediccionService = Depends(get_prediccion_service),
     gestion_id: Annotated[int | None, Query(description="ID de la gestión académica")] = None,
 ):
@@ -257,7 +257,7 @@ async def prediccion_masiva(
 )
 async def historial_predicciones(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("predicciones")),
+    _: Usuario = Depends(require_module("Visualización de Resultados")),
     estudiante_id: Annotated[int | None, Query(description="Filtrar por estudiante")] = None,
     nivel_riesgo: Annotated[str | None, Query(description="Filtrar por nivel")] = None,
     tipo: Annotated[str | None, Query(description="individual o masiva")] = None,
@@ -328,7 +328,7 @@ async def historial_predicciones(
 async def evolucion_estudiante(
     estudiante_id: int,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("predicciones")),
+    _: Usuario = Depends(require_module("Visualización de Resultados")),
 ):
     # Estudiante
     q = select(Estudiante).where(Estudiante.id == estudiante_id)
@@ -405,7 +405,7 @@ async def evolucion_estudiante(
 )
 async def listar_lotes(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("predicciones")),
+    _: Usuario = Depends(require_module("Visualización de Resultados")),
 ):
     q = (
         select(LotePrediccion)
@@ -444,7 +444,7 @@ async def listar_lotes(
 async def detalle_lote(
     lote_id: int,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("predicciones")),
+    _: Usuario = Depends(require_module("Visualización de Resultados")),
 ):
     q = (
         select(LotePrediccion)
@@ -503,7 +503,7 @@ async def detalle_lote(
 )
 async def dashboard(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("predicciones")),
+    _: Usuario = Depends(require_module("Visualización de Resultados")),
     paralelo_id: Annotated[int | None, Query(description="Filtrar por paralelo")] = None,
 ):
     # Subquery: última predicción por estudiante

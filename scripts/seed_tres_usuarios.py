@@ -40,7 +40,7 @@ async def seed_tres_usuarios():
         result_mod = await session.execute(select(Modulo))
         modulos = result_mod.scalars().all()
         if not modulos:
-            for nombre in ("asistencias", "estudiantes", "reportes", "configuracion"):
+            for nombre in ("Control de Asistencia", "Gestión de Datos de Estudiantes", "Reportes", "Gestión de Usuarios", "Visualización de Resultados"):
                 session.add(Modulo(nombre=nombre))
             await session.flush()
             result_mod = await session.execute(select(Modulo))

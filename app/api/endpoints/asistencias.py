@@ -28,7 +28,7 @@ router = APIRouter(prefix="/asistencias", tags=["asistencias"])
 )
 async def listar_asistencia_dia(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("asistencias")),
+    _: Usuario = Depends(require_module("Control de Asistencia")),
     materia_id: Annotated[int, Query(description="ID de la materia")] = ...,
     paralelo_id: Annotated[int, Query(description="ID del paralelo")] = ...,
     fecha: Annotated[date | None, Query(description="Fecha del día (por defecto hoy)")] = None,
@@ -124,7 +124,7 @@ async def listar_asistencia_dia(
 async def crear_asistencia_dia(
     body: AsistenciaDiaUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: Usuario = Depends(require_module("asistencias")),
+    current_user: Usuario = Depends(require_module("Control de Asistencia")),
     materia_id: Annotated[int, Query(description="ID de la materia")] = ...,
     paralelo_id: Annotated[int, Query(description="ID del paralelo")] = ...,
     fecha: Annotated[date | None, Query(description="Fecha del día (por defecto hoy)")] = None,

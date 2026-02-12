@@ -22,16 +22,16 @@ router = APIRouter(prefix="/usuarios", tags=["usuarios"])
     "",
     response_model=UsuarioListResponse,
     summary="Listar usuarios",
-    description="Lista todos los usuarios con nombre, correo, rol y estado. Requiere módulo configuracion.",
+    description="Lista todos los usuarios con nombre, correo, rol, estado y módulos asignados (IDs). Requiere módulo Gestión de Usuarios.",
 )
 async def listar_usuarios(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("configuracion")),
+    _: Usuario = Depends(require_module("Gestión de Usuarios")),
 ):
     """Devuelve los usuarios con nombre, correo, nombre del rol y estado."""
     q = (
         select(Usuario)
-        .options(selectinload(Usuario.rol))
+        .options(selectinload(Usuario.rol), selectinload(Usuario.modulos))
         .order_by(Usuario.nombre)
     )
     result = await db.execute(q)
@@ -44,6 +44,7 @@ async def listar_usuarios(
             correo=u.email,
             rol=u.rol.nombre if u.rol else "",
             estado=u.estado,
+            modulos=[m.id for m in u.modulos],
         )
         for u in usuarios
     ]
@@ -54,12 +55,12 @@ async def listar_usuarios(
     "",
     status_code=status.HTTP_201_CREATED,
     summary="Crear usuario",
-    description="Crea un nuevo usuario. Estado inicial: inactivo. Requiere módulo configuracion.",
+    description="Crea un nuevo usuario. Estado inicial: inactivo. Campo modulos acepta lista de IDs de módulos. Requiere módulo Gestión de Usuarios.",
 )
 async def crear_usuario(
     body: UsuarioCreate,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("configuracion")),
+    _: Usuario = Depends(require_module("Gestión de Usuarios")),
 ):
     """Crea un usuario con los datos del body. El estado se establece en inactivo."""
     # Correo único
@@ -88,21 +89,39 @@ async def crear_usuario(
         cargo=body.cargo,
     )
     db.add(usuario)
+    await db.flush()
+
+    # Asignar módulos si se enviaron
+    modulos_asignados: list[int] = []
+    if body.modulos:
+        r_mod = await db.execute(select(Modulo).where(Modulo.id.in_(body.modulos)))
+        modulos_encontrados = r_mod.scalars().all()
+        ids_encontrados = {m.id for m in modulos_encontrados}
+        faltantes = set(body.modulos) - ids_encontrados
+        if faltantes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Módulos no existentes (IDs): {sorted(faltantes)}",
+            )
+        for m in modulos_encontrados:
+            db.add(UsuarioModulo(usuario_id=usuario.id, modulo_id=m.id))
+        modulos_asignados = body.modulos
+
     await db.commit()
     await db.refresh(usuario)
-    return {"id": usuario.id, "correo": usuario.email, "estado": usuario.estado}
+    return {"id": usuario.id, "correo": usuario.email, "estado": usuario.estado, "modulos": modulos_asignados}
 
 
 @router.patch(
     "/{usuario_id}",
     summary="Actualizar usuario",
-    description="Actualiza nombre, carnet, teléfono, cargo, correo, rol_id, estado y/o módulos. Solo los campos enviados se modifican. Requiere módulo configuracion.",
+    description="Actualiza nombre, carnet, teléfono, cargo, correo, rol_id, estado y/o módulos (IDs). Solo los campos enviados se modifican. Requiere módulo Gestión de Usuarios.",
 )
 async def actualizar_estado_y_modulos(
     usuario_id: int,
     body: UsuarioUpdateEstadoModulos,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("configuracion")),
+    _: Usuario = Depends(require_module("Gestión de Usuarios")),
 ):
     """Actualiza los campos enviados del usuario (nombre, carnet, teléfono, cargo, correo, rol_id, estado, módulos)."""
     r = await db.execute(
@@ -145,14 +164,14 @@ async def actualizar_estado_y_modulos(
     if body.modulos is not None:
         await db.execute(delete(UsuarioModulo).where(UsuarioModulo.usuario_id == usuario_id))
         if body.modulos:
-            r_mod = await db.execute(select(Modulo).where(Modulo.nombre.in_(body.modulos)))
+            r_mod = await db.execute(select(Modulo).where(Modulo.id.in_(body.modulos)))
             modulos = r_mod.scalars().all()
-            nombres_encontrados = {m.nombre for m in modulos}
-            faltantes = set(body.modulos) - nombres_encontrados
+            ids_encontrados = {m.id for m in modulos}
+            faltantes = set(body.modulos) - ids_encontrados
             if faltantes:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Módulos no existentes: {', '.join(sorted(faltantes))}",
+                    detail=f"Módulos no existentes (IDs): {sorted(faltantes)}",
                 )
             for m in modulos:
                 db.add(UsuarioModulo(usuario_id=usuario_id, modulo_id=m.id))
@@ -160,12 +179,12 @@ async def actualizar_estado_y_modulos(
     await db.commit()
     await db.refresh(usuario)
 
-    modulos_actuales: list[str] = []
+    modulos_actuales: list[int] = []
     if body.modulos is not None:
         modulos_actuales = body.modulos
     else:
         r_um = await db.execute(
-            select(Modulo.nombre)
+            select(Modulo.id)
             .join(UsuarioModulo, UsuarioModulo.modulo_id == Modulo.id)
             .where(UsuarioModulo.usuario_id == usuario_id)
         )

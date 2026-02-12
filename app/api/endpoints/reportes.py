@@ -76,7 +76,7 @@ TIPOS_INFO = [
     summary="Tipos de reporte disponibles",
 )
 async def listar_tipos(
-    _: Usuario = Depends(require_module("reportes")),
+    _: Usuario = Depends(require_module("Reportes")),
 ):
     return TiposReporteResponse(tipos=TIPOS_INFO)
 
@@ -91,7 +91,7 @@ async def listar_tipos(
 )
 async def historial_reportes(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("reportes")),
+    _: Usuario = Depends(require_module("Reportes")),
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
@@ -138,7 +138,7 @@ async def historial_reportes(
 async def generar_reporte(
     body: ReporteGenerarRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: Usuario = Depends(require_module("reportes")),
+    current_user: Usuario = Depends(require_module("Reportes")),
 ):
     # Validaciones previas
     if body.tipo == "por_paralelo" and not body.paralelo_id:

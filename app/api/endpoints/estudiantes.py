@@ -12,6 +12,8 @@ from sqlalchemy.orm import selectinload
 from app.api.endpoints.auth import get_current_user, require_module
 from app.core.database import get_db
 from app.models import (
+    Accion,
+    Alerta,
     Area,
     Asistencia,
     Estudiante,
@@ -25,14 +27,30 @@ from app.models import (
 )
 from app.models.paralelo import Paralelo
 from app.models.asistencia import EstadoAsistencia
+from app.models.alerta import EstadoAlerta
 from app.schemas.estudiante import (
     EstudianteSociodemograficoUpdate,
+    EstudiantePerfilResponse,
     EstudianteTablaItem,
     EstudianteTablaResponse,
     ImportacionErrorItem,
     ImportacionEstudiantesResponse,
     ImportacionResumen,
+    PerfilAccion,
+    PerfilAlerta,
+    PerfilAlertas,
+    PerfilAsistenciaConteo,
+    PerfilDatosBasicos,
+    PerfilDesempenioAcademico,
+    PerfilEncargado,
+    PerfilMateriaAsistencia,
+    PerfilParalelo,
+    PerfilPrediccionActual,
+    PerfilPrediccionHistorial,
+    PerfilRiesgoPrediccion,
+    PerfilSociodemografico,
 )
+from app.services.alerta_service import verificar_inasistencias_consecutivas
 
 router = APIRouter(prefix="/estudiantes", tags=["estudiantes"])
 
@@ -141,6 +159,268 @@ async def get_estudiantes_tabla(
         )
 
     return EstudianteTablaResponse(estudiantes=items)
+
+
+@router.get(
+    "/{estudiante_id}/perfil",
+    response_model=EstudiantePerfilResponse,
+    summary="Perfil completo de un estudiante",
+    description=(
+        "Devuelve todos los datos del estudiante organizados en secciones: "
+        "datos básicos, sociodemográficos, desempeño académico (asistencia por materia), "
+        "predicciones ML con historial, alertas y acciones tomadas."
+    ),
+    responses={
+        200: {"description": "Perfil del estudiante"},
+        404: {"description": "Estudiante no encontrado"},
+    },
+)
+async def get_estudiante_perfil(
+    estudiante_id: int,
+    db: AsyncSession = Depends(get_db),
+    _current_user: Usuario = Depends(get_current_user),
+):
+    # ── 1. Estudiante + paralelo + área + semestre ────────────────
+    q_est = (
+        select(Estudiante)
+        .options(
+            selectinload(Estudiante.paralelo)
+            .selectinload(Paralelo.area),
+            selectinload(Estudiante.paralelo)
+            .selectinload(Paralelo.semestre),
+        )
+        .where(Estudiante.id == estudiante_id)
+    )
+    res = await db.execute(q_est)
+    est = res.scalar_one_or_none()
+    if not est:
+        raise HTTPException(status_code=404, detail="Estudiante no encontrado")
+
+    # Encargado del paralelo
+    encargado_info = None
+    if est.paralelo and est.paralelo.encargado_id:
+        r_enc = await db.execute(
+            select(Usuario.id, Usuario.nombre)
+            .where(Usuario.id == est.paralelo.encargado_id)
+        )
+        enc = r_enc.one_or_none()
+        if enc:
+            encargado_info = PerfilEncargado(id=enc.id, nombre=enc.nombre)
+
+    # Calcular edad
+    edad = None
+    if est.fecha_nacimiento:
+        hoy = date.today()
+        edad = hoy.year - est.fecha_nacimiento.year - (
+            (hoy.month, hoy.day) < (est.fecha_nacimiento.month, est.fecha_nacimiento.day)
+        )
+
+    paralelo_info = None
+    if est.paralelo:
+        paralelo_info = PerfilParalelo(
+            id=est.paralelo.id,
+            nombre=est.paralelo.nombre,
+            semestre=est.paralelo.semestre.nombre if est.paralelo.semestre else None,
+            encargado=encargado_info,
+        )
+
+    datos_basicos = PerfilDatosBasicos(
+        id=est.id,
+        codigo_estudiante=est.codigo_estudiante,
+        nombre_completo=f"{est.nombre} {est.apellido}".strip(),
+        edad=edad,
+        genero=est.genero,
+        carrera=est.paralelo.area.nombre if est.paralelo and est.paralelo.area else None,
+        paralelo=paralelo_info,
+    )
+
+    datos_socio = PerfilSociodemografico(
+        fecha_nacimiento=est.fecha_nacimiento,
+        grado=est.grado,
+        estrato_socioeconomico=est.estrato_socioeconomico,
+        ocupacion_laboral=est.ocupacion_laboral,
+        con_quien_vive=est.con_quien_vive,
+        apoyo_economico=est.apoyo_economico,
+        modalidad_ingreso=est.modalidad_ingreso,
+        tipo_colegio=est.tipo_colegio,
+    )
+
+    # ── 2. Asistencias agrupadas por materia ──────────────────────
+    q_asis = (
+        select(
+            Asistencia.materia_id,
+            Materia.nombre.label("materia_nombre"),
+            func.sum(case(
+                (Asistencia.estado.in_([EstadoAsistencia.PRESENTE, EstadoAsistencia.JUSTIFICADO]), 1),
+                else_=0,
+            )).label("presentes"),
+            func.sum(case(
+                (Asistencia.estado == EstadoAsistencia.AUSENTE, 1),
+                else_=0,
+            )).label("ausentes"),
+            func.sum(case(
+                (Asistencia.estado == EstadoAsistencia.JUSTIFICADO, 1),
+                else_=0,
+            )).label("justificados"),
+            func.sum(case(
+                (Asistencia.estado.in_([
+                    EstadoAsistencia.PRESENTE,
+                    EstadoAsistencia.AUSENTE,
+                    EstadoAsistencia.JUSTIFICADO,
+                ]), 1),
+                else_=0,
+            )).label("total"),
+        )
+        .join(Materia, Materia.id == Asistencia.materia_id)
+        .where(Asistencia.estudiante_id == estudiante_id)
+        .group_by(Asistencia.materia_id, Materia.nombre)
+    )
+    res_asis = await db.execute(q_asis)
+
+    # Buscar gestión de cada materia inscrita
+    q_insc = (
+        select(Inscripcion.materia_id, Inscripcion.gestion_academica)
+        .where(Inscripcion.estudiante_id == estudiante_id)
+    )
+    res_insc = await db.execute(q_insc)
+    gestion_por_materia: dict[int, str] = {}
+    for r in res_insc:
+        gestion_por_materia[r.materia_id] = r.gestion_academica
+
+    materias_asistencia: list[PerfilMateriaAsistencia] = []
+    total_presentes_general = 0
+    total_general = 0
+
+    for r in res_asis:
+        presentes = r.presentes or 0
+        ausentes = r.ausentes or 0
+        justificados = r.justificados or 0
+        total = r.total or 0
+        porcentaje = round(100.0 * presentes / total, 1) if total else 0.0
+
+        # Para el cálculo general, presentes incluye justificados
+        total_presentes_general += presentes
+        total_general += total
+
+        materias_asistencia.append(PerfilMateriaAsistencia(
+            materia_id=r.materia_id,
+            nombre=r.materia_nombre,
+            gestion_academica=gestion_por_materia.get(r.materia_id),
+            porcentaje_asistencia=porcentaje,
+            asistencias=PerfilAsistenciaConteo(
+                presentes=presentes - justificados,  # solo presentes puros
+                ausentes=ausentes,
+                justificados=justificados,
+            ),
+        ))
+
+    faltas_consecutivas = await verificar_inasistencias_consecutivas(estudiante_id, db)
+
+    desempenio = PerfilDesempenioAcademico(
+        porcentaje_asistencia_general=round(
+            100.0 * total_presentes_general / total_general, 1
+        ) if total_general else 0.0,
+        faltas_consecutivas=faltas_consecutivas,
+        materias=materias_asistencia,
+    )
+
+    # ── 3. Predicciones ───────────────────────────────────────────
+    q_preds = (
+        select(Prediccion)
+        .where(Prediccion.estudiante_id == estudiante_id)
+        .order_by(Prediccion.fecha_prediccion.desc(), Prediccion.id.desc())
+    )
+    res_preds = await db.execute(q_preds)
+    predicciones = res_preds.scalars().all()
+
+    prediccion_actual = None
+    historial_preds: list[PerfilPrediccionHistorial] = []
+
+    if predicciones:
+        p = predicciones[0]  # La más reciente
+        clasificacion = "Abandona" if p.probabilidad_abandono >= 0.5 else "No Abandona"
+        prediccion_actual = PerfilPrediccionActual(
+            id=p.id,
+            probabilidad_abandono=round(p.probabilidad_abandono, 4),
+            nivel_riesgo=p.nivel_riesgo,
+            clasificacion=clasificacion,
+            fecha_prediccion=p.fecha_prediccion,
+            tipo=p.tipo,
+            version_modelo=p.version_modelo,
+            features_utilizadas=p.features_utilizadas,
+        )
+        # Historial completo (incluye la actual, para gráfico de evolución)
+        for pred in predicciones:
+            historial_preds.append(PerfilPrediccionHistorial(
+                id=pred.id,
+                fecha_prediccion=pred.fecha_prediccion,
+                probabilidad_abandono=round(pred.probabilidad_abandono, 4),
+                nivel_riesgo=pred.nivel_riesgo,
+            ))
+
+    riesgo = PerfilRiesgoPrediccion(
+        prediccion_actual=prediccion_actual,
+        historial=historial_preds,
+    )
+
+    # ── 4. Alertas ────────────────────────────────────────────────
+    q_alertas = (
+        select(Alerta)
+        .where(Alerta.estudiante_id == estudiante_id)
+        .order_by(Alerta.fecha_creacion.desc())
+    )
+    res_alertas = await db.execute(q_alertas)
+    todas_alertas = res_alertas.scalars().all()
+
+    activas: list[PerfilAlerta] = []
+    historial_alertas: list[PerfilAlerta] = []
+
+    for a in todas_alertas:
+        alerta_schema = PerfilAlerta(
+            id=a.id,
+            tipo=a.tipo,
+            nivel=a.nivel,
+            titulo=a.titulo,
+            descripcion=a.descripcion,
+            fecha_creacion=a.fecha_creacion,
+            estado=a.estado,
+            faltas_consecutivas=a.faltas_consecutivas,
+            fecha_resolucion=a.fecha_resolucion,
+            observacion_resolucion=a.observacion_resolucion,
+        )
+        if a.estado in (EstadoAlerta.ACTIVA, EstadoAlerta.EN_SEGUIMIENTO):
+            activas.append(alerta_schema)
+        else:
+            historial_alertas.append(alerta_schema)
+
+    alertas = PerfilAlertas(activas=activas, historial=historial_alertas)
+
+    # ── 5. Acciones tomadas ───────────────────────────────────────
+    pred_ids = [p.id for p in predicciones] if predicciones else []
+    acciones_lista: list[PerfilAccion] = []
+    if pred_ids:
+        q_acciones = (
+            select(Accion)
+            .where(Accion.prediccion_id.in_(pred_ids))
+            .order_by(Accion.fecha.desc())
+        )
+        res_acciones = await db.execute(q_acciones)
+        for ac in res_acciones.scalars().all():
+            acciones_lista.append(PerfilAccion(
+                id=ac.id,
+                descripcion=ac.descripcion,
+                fecha=ac.fecha,
+                prediccion_id=ac.prediccion_id,
+            ))
+
+    return EstudiantePerfilResponse(
+        datos_basicos=datos_basicos,
+        datos_sociodemograficos=datos_socio,
+        desempenio_academico=desempenio,
+        riesgo_y_prediccion=riesgo,
+        alertas=alertas,
+        acciones=acciones_lista,
+    )
 
 
 # ── Campos sociodemográficos válidos para importación ────────────────

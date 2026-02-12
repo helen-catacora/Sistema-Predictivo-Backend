@@ -50,7 +50,7 @@ async def listar_gestiones(
 async def crear_gestion(
     body: GestionAcademicaCreate,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("configuracion")),
+    _: Usuario = Depends(require_module("Gestión de Usuarios")),
 ):
     # Verificar nombre único
     existing = await db.execute(
@@ -86,7 +86,7 @@ async def crear_gestion(
 async def activar_gestion(
     gestion_id: int,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("configuracion")),
+    _: Usuario = Depends(require_module("Gestión de Usuarios")),
 ):
     q = select(GestionAcademica).where(GestionAcademica.id == gestion_id)
     result = await db.execute(q)

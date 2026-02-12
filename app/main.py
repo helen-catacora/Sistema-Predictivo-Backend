@@ -66,6 +66,10 @@ OPENAPI_TAGS = [
         "description": "Generación de reportes PDF: predictivo general, estudiantes en riesgo, por paralelo, asistencia e individual.",
     },
     {
+        "name": "modulos",
+        "description": "Módulos del sistema: listado de módulos disponibles para asignación a usuarios.",
+    },
+    {
         "name": "salud",
         "description": "Comprobación del estado del servicio.",
     },

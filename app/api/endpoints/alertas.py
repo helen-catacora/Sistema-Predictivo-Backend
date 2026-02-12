@@ -28,7 +28,7 @@ router = APIRouter(prefix="/alertas", tags=["alertas"])
 )
 async def listar_alertas(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("predicciones")),
+    _: Usuario = Depends(require_module("Visualización de Resultados")),
     estado: Annotated[str | None, Query(description="Filtrar por estado")] = None,
     tipo: Annotated[str | None, Query(description="temprana, critica o abandono")] = None,
     nivel: Annotated[str | None, Query(description="Bajo, Medio, Alto o Critico")] = None,
@@ -94,7 +94,7 @@ async def actualizar_alerta(
     alerta_id: int,
     body: AlertaUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: Usuario = Depends(require_module("predicciones")),
+    current_user: Usuario = Depends(require_module("Visualización de Resultados")),
 ):
     q = select(Alerta).where(Alerta.id == alerta_id)
     result = await db.execute(q)

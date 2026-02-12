@@ -1,5 +1,5 @@
-"""Esquemas para estudiantes (tabla de sección e importación masiva)."""
-from datetime import date
+"""Esquemas para estudiantes (tabla de sección, importación masiva, perfil)."""
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -70,3 +70,118 @@ class ImportacionEstudiantesResponse(BaseModel):
     total_errores: int = Field(default=0)
     errores: list[ImportacionErrorItem] = Field(default_factory=list)
     resumen: ImportacionResumen = Field(default_factory=ImportacionResumen)
+
+
+# ── Perfil individual del estudiante ──────────────────────────────
+
+
+class PerfilEncargado(BaseModel):
+    id: int
+    nombre: str
+
+
+class PerfilParalelo(BaseModel):
+    id: int
+    nombre: str
+    semestre: str | None = None
+    encargado: PerfilEncargado | None = None
+
+
+class PerfilDatosBasicos(BaseModel):
+    id: int
+    codigo_estudiante: str
+    nombre_completo: str
+    edad: int | None = None
+    genero: str | None = None
+    carrera: str | None = None
+    paralelo: PerfilParalelo | None = None
+
+
+class PerfilSociodemografico(BaseModel):
+    fecha_nacimiento: date | None = None
+    grado: str | None = None
+    estrato_socioeconomico: str | None = None
+    ocupacion_laboral: str | None = None
+    con_quien_vive: str | None = None
+    apoyo_economico: str | None = None
+    modalidad_ingreso: str | None = None
+    tipo_colegio: str | None = None
+
+
+class PerfilAsistenciaConteo(BaseModel):
+    presentes: int = 0
+    ausentes: int = 0
+    justificados: int = 0
+
+
+class PerfilMateriaAsistencia(BaseModel):
+    materia_id: int
+    nombre: str
+    gestion_academica: str | None = None
+    porcentaje_asistencia: float = 0.0
+    asistencias: PerfilAsistenciaConteo = Field(default_factory=PerfilAsistenciaConteo)
+
+
+class PerfilDesempenioAcademico(BaseModel):
+    porcentaje_asistencia_general: float = 0.0
+    faltas_consecutivas: int = 0
+    materias: list[PerfilMateriaAsistencia] = Field(default_factory=list)
+
+
+class PerfilPrediccionActual(BaseModel):
+    id: int
+    probabilidad_abandono: float
+    nivel_riesgo: str
+    clasificacion: str = Field(description="Abandona o No Abandona")
+    fecha_prediccion: date
+    tipo: str
+    version_modelo: str | None = None
+    features_utilizadas: dict | None = None
+
+
+class PerfilPrediccionHistorial(BaseModel):
+    id: int
+    fecha_prediccion: date
+    probabilidad_abandono: float
+    nivel_riesgo: str
+
+
+class PerfilRiesgoPrediccion(BaseModel):
+    prediccion_actual: PerfilPrediccionActual | None = None
+    historial: list[PerfilPrediccionHistorial] = Field(default_factory=list)
+
+
+class PerfilAlerta(BaseModel):
+    id: int
+    tipo: str
+    nivel: str
+    titulo: str
+    descripcion: str
+    fecha_creacion: datetime
+    estado: str
+    faltas_consecutivas: int = 0
+    fecha_resolucion: datetime | None = None
+    observacion_resolucion: str | None = None
+
+
+class PerfilAlertas(BaseModel):
+    activas: list[PerfilAlerta] = Field(default_factory=list)
+    historial: list[PerfilAlerta] = Field(default_factory=list)
+
+
+class PerfilAccion(BaseModel):
+    id: int
+    descripcion: str
+    fecha: date
+    prediccion_id: int
+
+
+class EstudiantePerfilResponse(BaseModel):
+    """Respuesta completa del perfil de un estudiante."""
+
+    datos_basicos: PerfilDatosBasicos
+    datos_sociodemograficos: PerfilSociodemografico
+    desempenio_academico: PerfilDesempenioAcademico
+    riesgo_y_prediccion: PerfilRiesgoPrediccion
+    alertas: PerfilAlertas
+    acciones: list[PerfilAccion] = Field(default_factory=list)
