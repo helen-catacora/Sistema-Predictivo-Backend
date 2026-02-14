@@ -111,18 +111,25 @@ async def get_estudiantes_tabla(
     res_asis = await db.execute(subq)
     filas_asis = {r.estudiante_id: (r.presentes or 0, r.total or 0) for r in res_asis}
 
-    # Última predicción ML por estudiante (patrón reutilizado de /predicciones/dashboard)
+    # Última predicción ML por estudiante (ordenada por fecha_prediccion DESC, id DESC)
     subq_pred = (
         select(
+            Prediccion.id,
             Prediccion.estudiante_id,
-            func.max(Prediccion.id).label("max_id"),
+            Prediccion.probabilidad_abandono,
+            Prediccion.nivel_riesgo,
+            func.row_number()
+            .over(
+                partition_by=Prediccion.estudiante_id,
+                order_by=[Prediccion.fecha_prediccion.desc(), Prediccion.id.desc()],
+            )
+            .label("rn"),
         )
-        .group_by(Prediccion.estudiante_id)
         .subquery()
     )
     q_preds = (
-        select(Prediccion.estudiante_id, Prediccion.probabilidad_abandono, Prediccion.nivel_riesgo)
-        .join(subq_pred, Prediccion.id == subq_pred.c.max_id)
+        select(subq_pred.c.estudiante_id, subq_pred.c.probabilidad_abandono, subq_pred.c.nivel_riesgo)
+        .where(subq_pred.c.rn == 1)
     )
     res_preds = await db.execute(q_preds)
     preds_map: dict[int, tuple[float, str]] = {
@@ -314,7 +321,12 @@ async def get_estudiante_perfil(
             ),
         ))
 
-    faltas_consecutivas = await verificar_inasistencias_consecutivas(estudiante_id, db)
+    # Máximo de faltas consecutivas entre todas las materias
+    faltas_consecutivas = 0
+    for m in materias_asistencia:
+        f = await verificar_inasistencias_consecutivas(estudiante_id, m.materia_id, db)
+        if f > faltas_consecutivas:
+            faltas_consecutivas = f
 
     desempenio = PerfilDesempenioAcademico(
         porcentaje_asistencia_general=round(

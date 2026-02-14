@@ -181,13 +181,18 @@ async def generar_reporte(
 
 async def _generar_predictivo_general(db: AsyncSession, body: ReporteGenerarRequest) -> tuple[bytes, str]:
     """Reporte predictivo general: resumen + distribución riesgo + distribución paralelo."""
-    # Subquery: última predicción por estudiante
+    # Subquery: última predicción por estudiante (por fecha_prediccion DESC, id DESC)
     subq = (
         select(
+            Prediccion.id.label("pred_id"),
             Prediccion.estudiante_id,
-            func.max(Prediccion.id).label("max_id"),
+            func.row_number()
+            .over(
+                partition_by=Prediccion.estudiante_id,
+                order_by=[Prediccion.fecha_prediccion.desc(), Prediccion.id.desc()],
+            )
+            .label("rn"),
         )
-        .group_by(Prediccion.estudiante_id)
         .subquery()
     )
 
@@ -198,7 +203,8 @@ async def _generar_predictivo_general(db: AsyncSession, body: ReporteGenerarRequ
             .selectinload(Estudiante.paralelo)
             .selectinload(Paralelo.area),
         )
-        .join(subq, Prediccion.id == subq.c.max_id)
+        .join(subq, Prediccion.id == subq.c.pred_id)
+        .where(subq.c.rn == 1)
     )
 
     result = await db.execute(q_latest)
@@ -264,13 +270,18 @@ async def _generar_predictivo_general(db: AsyncSession, body: ReporteGenerarRequ
 
 async def _generar_estudiantes_riesgo(db: AsyncSession, body: ReporteGenerarRequest) -> tuple[bytes, str]:
     """Estudiantes con riesgo Alto o Critico."""
-    # Subquery: última predicción por estudiante
+    # Subquery: última predicción por estudiante (por fecha_prediccion DESC, id DESC)
     subq = (
         select(
+            Prediccion.id.label("pred_id"),
             Prediccion.estudiante_id,
-            func.max(Prediccion.id).label("max_id"),
+            func.row_number()
+            .over(
+                partition_by=Prediccion.estudiante_id,
+                order_by=[Prediccion.fecha_prediccion.desc(), Prediccion.id.desc()],
+            )
+            .label("rn"),
         )
-        .group_by(Prediccion.estudiante_id)
         .subquery()
     )
 
@@ -280,7 +291,8 @@ async def _generar_estudiantes_riesgo(db: AsyncSession, body: ReporteGenerarRequ
             selectinload(Prediccion.estudiante)
             .selectinload(Estudiante.paralelo),
         )
-        .join(subq, Prediccion.id == subq.c.max_id)
+        .join(subq, Prediccion.id == subq.c.pred_id)
+        .where(subq.c.rn == 1)
         .where(Prediccion.nivel_riesgo.in_([NivelRiesgo.ALTO, NivelRiesgo.CRITICO]))
     )
 
@@ -336,19 +348,24 @@ async def _generar_por_paralelo(db: AsyncSession, body: ReporteGenerarRequest) -
 
     est_ids = [e.id for e in estudiantes_db]
 
-    # Última predicción de cada estudiante
+    # Última predicción de cada estudiante (por fecha_prediccion DESC, id DESC)
     preds_map: dict[int, Prediccion] = {}
     if est_ids:
         subq = (
             select(
+                Prediccion.id.label("pred_id"),
                 Prediccion.estudiante_id,
-                func.max(Prediccion.id).label("max_id"),
+                func.row_number()
+                .over(
+                    partition_by=Prediccion.estudiante_id,
+                    order_by=[Prediccion.fecha_prediccion.desc(), Prediccion.id.desc()],
+                )
+                .label("rn"),
             )
             .where(Prediccion.estudiante_id.in_(est_ids))
-            .group_by(Prediccion.estudiante_id)
             .subquery()
         )
-        q_pred = select(Prediccion).join(subq, Prediccion.id == subq.c.max_id)
+        q_pred = select(Prediccion).join(subq, Prediccion.id == subq.c.pred_id).where(subq.c.rn == 1)
         result = await db.execute(q_pred)
         for p in result.scalars().all():
             preds_map[p.estudiante_id] = p

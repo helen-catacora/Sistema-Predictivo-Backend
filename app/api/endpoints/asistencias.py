@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.models import Asistencia, Estudiante, Materia, Paralelo
 from app.models import Usuario
 from app.models.asistencia import EstadoAsistencia
+from app.services import alerta_service
 from app.schemas.asistencia import (
     AsistenciaDiaItem,
     AsistenciaDiaResponse,
@@ -181,5 +182,14 @@ async def crear_asistencia_dia(
             )
             db.add(nuevo)
             existentes[item.estudiante_id] = nuevo
+
+    # Evaluar alertas de asistencia para estudiantes ausentes
+    ausentes_ids = [
+        item.estudiante_id
+        for item in body.asistencias
+        if item.estado == EstadoAsistencia.AUSENTE
+    ]
+    for est_id in ausentes_ids:
+        await alerta_service.evaluar_alertas_asistencia(est_id, materia_id, db)
 
     return {"message": "Asistencia del día creada", "registros": len(body.asistencias)}

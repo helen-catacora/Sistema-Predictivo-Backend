@@ -506,13 +506,18 @@ async def dashboard(
     _: Usuario = Depends(require_module("Visualización de Resultados")),
     paralelo_id: Annotated[int | None, Query(description="Filtrar por paralelo")] = None,
 ):
-    # Subquery: última predicción por estudiante
+    # Subquery: última predicción por estudiante (por fecha_prediccion DESC, id DESC)
     subq = (
         select(
+            Prediccion.id.label("pred_id"),
             Prediccion.estudiante_id,
-            func.max(Prediccion.id).label("max_id"),
+            func.row_number()
+            .over(
+                partition_by=Prediccion.estudiante_id,
+                order_by=[Prediccion.fecha_prediccion.desc(), Prediccion.id.desc()],
+            )
+            .label("rn"),
         )
-        .group_by(Prediccion.estudiante_id)
         .subquery()
     )
 
@@ -523,7 +528,8 @@ async def dashboard(
             .selectinload(Estudiante.paralelo)
             .selectinload(Paralelo.area),
         )
-        .join(subq, Prediccion.id == subq.c.max_id)
+        .join(subq, Prediccion.id == subq.c.pred_id)
+        .where(subq.c.rn == 1)
     )
 
     if paralelo_id:

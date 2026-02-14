@@ -55,26 +55,46 @@ async def listar_alertas(
     result = await db.execute(q)
     alertas = result.scalars().unique().all()
 
-    items = []
+    # Contar sobre alertas originales
+    total_activas = sum(1 for a in alertas if a.estado == "activa")
+    total_criticas = sum(1 for a in alertas if a.tipo == "critica" and a.estado == "activa")
+
+    # Agrupar por estudiante: solo mostrar la alerta más reciente
+    por_estudiante: dict[int, list] = {}
     for a in alertas:
-        e = a.estudiante
+        por_estudiante.setdefault(a.estudiante_id, []).append(a)
+
+    items = []
+    for est_id, grupo in por_estudiante.items():
+        grupo.sort(key=lambda x: x.fecha_creacion, reverse=True)
+        mas_reciente = grupo[0]
+        e = mas_reciente.estudiante
+        total_alertas_est = len(grupo)
+
+        descripcion = mas_reciente.descripcion
+        if total_alertas_est > 1:
+            extra = total_alertas_est - 1
+            descripcion += (
+                f" | Este estudiante tiene {extra} alerta(s) adicional(es)."
+                f" Revisar el perfil del estudiante para más detalle."
+            )
+
         items.append(AlertaItem(
-            id=a.id,
-            tipo=a.tipo,
-            nivel=a.nivel,
+            id=mas_reciente.id,
+            tipo=mas_reciente.tipo,
+            nivel=mas_reciente.nivel,
             estudiante_id=e.id,
             nombre_estudiante=f"{e.nombre} {e.apellido}".strip(),
             codigo_estudiante=e.codigo_estudiante,
             paralelo=e.paralelo.nombre if e.paralelo else "",
-            titulo=a.titulo,
-            descripcion=a.descripcion,
-            fecha_creacion=a.fecha_creacion,
-            estado=a.estado,
-            faltas_consecutivas=a.faltas_consecutivas,
+            titulo=mas_reciente.titulo,
+            descripcion=descripcion,
+            fecha_creacion=mas_reciente.fecha_creacion,
+            estado=mas_reciente.estado,
+            faltas_consecutivas=mas_reciente.faltas_consecutivas or 0,
         ))
 
-    total_activas = sum(1 for a in alertas if a.estado == "activa")
-    total_criticas = sum(1 for a in alertas if a.tipo == "critica" and a.estado == "activa")
+    items.sort(key=lambda x: x.fecha_creacion, reverse=True)
 
     return AlertasListResponse(
         total=len(items),
