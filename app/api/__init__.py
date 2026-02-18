@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.endpoints import (
+    acciones,
     alertas,
     asistencias,
     estudiantes,
@@ -34,6 +35,7 @@ router.include_router(alertas.router)
 router.include_router(gestiones.router)
 router.include_router(reportes.router)
 router.include_router(modulos.router)
+router.include_router(acciones.router)
 
 
 @router.get(

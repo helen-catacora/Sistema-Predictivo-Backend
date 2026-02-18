@@ -92,7 +92,7 @@ async def prediccion_individual(
     features = _armar_features(estudiante, body.datos_academicos, body.datos_sociodemograficos)
 
     # Predecir
-    probabilidad, nivel_riesgo = ml.predecir(features)
+    probabilidad, nivel_riesgo, clasificacion = ml.predecir(features)
 
     # Guardar predicción
     prediccion = Prediccion(
@@ -197,7 +197,7 @@ async def prediccion_masiva(
         features = _armar_features_desde_excel(estudiante, row)
 
         try:
-            probabilidad, nivel_riesgo = ml.predecir(features)
+            probabilidad, nivel_riesgo, clasificacion = ml.predecir(features)
         except Exception:
             errores.append(f"Error al predecir: {codigo}")
             continue
