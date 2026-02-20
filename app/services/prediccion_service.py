@@ -74,8 +74,13 @@ class PrediccionService:
         for col in self.CATEGORICAL_COLS:
             pre_ohe[col] = imputed_df[f"{col}_enc"].values
 
-        # One Hot Encoding (drop_first=True, igual que en entrenamiento)
-        df_ohe = pd.get_dummies(pre_ohe, columns=self.CATEGORICAL_COLS, drop_first=True)
+        # OHE sin drop_first para no depender de qué categorías estén presentes en el batch
+        df_ohe = pd.get_dummies(pre_ohe, columns=self.CATEGORICAL_COLS, drop_first=False)
+        # Eliminar columnas _0 de cada categórica (equivalente exacto al drop_first=True del
+        # entrenamiento, donde siempre estaban presentes todas las categorías incluyendo la 0)
+        for col in self.CATEGORICAL_COLS:
+            if f"{col}_0" in df_ohe.columns:
+                df_ohe = df_ohe.drop(columns=[f"{col}_0"])
 
         # Alinear columnas con las del entrenamiento; rellena con 0 las que no aparezcan
         df_ohe = df_ohe.reindex(columns=self.feature_columns, fill_value=0)

@@ -1,7 +1,10 @@
 """Endpoints de predicciones de abandono (masiva, individual, historial, lotes, dashboard)."""
+import logging
 import math
 from datetime import date
 from typing import Annotated
+
+logger = logging.getLogger(__name__)
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
@@ -45,6 +48,19 @@ from app.services import alerta_service
 from app.services.prediccion_service import PrediccionService
 
 router = APIRouter(prefix="/predicciones", tags=["predicciones"])
+
+# Normalización de valores del Excel antes de guardar en BD.
+# Los CHECK constraints de estudiantes requieren valores sin acento,
+# alineados con las clases del label_encoders.pkl del modelo ML.
+_NORMALIZAR_EXCEL: dict[str, dict[str, str]] = {
+    "tipo_colegio": {
+        "Público": "Publico",
+    },
+    "modalidad_ingreso": {
+        "Prueba de Suficiencia Académica": "Prueba de Suficiencia Academica",
+        "Admisión Especial": "Admision Especial",
+    },
+}
 
 
 def get_prediccion_service(request: Request) -> PrediccionService:
@@ -200,8 +216,9 @@ async def prediccion_masiva(
 
         try:
             probabilidad, nivel_riesgo, clasificacion = ml.predecir(features)
-        except Exception:
-            errores.append(f"Error al predecir: {codigo}")
+        except Exception as exc:
+            logger.exception("Fallo en predicción ML para código %s", codigo)
+            errores.append(f"Error al predecir {codigo}: {type(exc).__name__}: {exc}")
             continue
 
         prediccion = Prediccion(
@@ -718,6 +735,8 @@ def _actualizar_estudiante_desde_excel(estudiante, row) -> None:
         if val is not None and not (isinstance(val, float) and pd.isna(val)):
             val_str = str(val).strip()
             if val_str:
+                # Normalizar valores acentuados para cumplir CHECK constraints de BD
+                val_str = _NORMALIZAR_EXCEL.get(col_excel, {}).get(val_str, val_str)
                 setattr(estudiante, attr, val_str)
 
     # Edad → fecha_nacimiento (si viene edad y no tiene fecha_nacimiento)

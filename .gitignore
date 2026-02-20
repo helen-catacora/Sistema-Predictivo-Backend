@@ -41,3 +41,4 @@ htmlcov/
 *.log
 logs/
 ml_models/
+ml_models_antiguo/
