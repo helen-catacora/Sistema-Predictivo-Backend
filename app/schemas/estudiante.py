@@ -48,6 +48,19 @@ class ImportacionErrorItem(BaseModel):
     mensaje: str = Field(description="Descripción del error")
 
 
+class UltimaImportacionEstudiante(BaseModel):
+    """Detalle del último archivo subido para creación de estudiantes."""
+    nombre_archivo: str
+    fecha_carga: datetime
+    cantidad_registros: int
+
+
+class ResumenImportacionEstudiantesResponse(BaseModel):
+    """Resumen de importaciones de creación de estudiantes: total de cargas y detalle de la última."""
+    total_importaciones: int
+    ultima_importacion: UltimaImportacionEstudiante | None
+
+
 class ImportacionResumen(BaseModel):
     """Contadores de entidades creadas durante la importación."""
 

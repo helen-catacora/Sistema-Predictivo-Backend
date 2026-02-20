@@ -38,6 +38,8 @@ from app.schemas.prediccion import (
     PrediccionIndividualRequest,
     PrediccionIndividualResponse,
     ResumenGeneral,
+    ResumenImportacionMasivaResponse,
+    UltimaImportacionMasiva,
 )
 from app.services import alerta_service
 from app.services.prediccion_service import PrediccionService
@@ -607,6 +609,42 @@ async def dashboard(
         resumen_general=resumen,
         distribucion_riesgo=dist_riesgo,
         distribucion_por_paralelo=dist_paralelo,
+    )
+
+
+# ------------------------------------------------------------------
+# GET /predicciones/resumen-importaciones
+# ------------------------------------------------------------------
+@router.get(
+    "/resumen-importaciones",
+    response_model=ResumenImportacionMasivaResponse,
+    summary="Resumen de importaciones masivas",
+    description="Devuelve el total de predicciones masivas realizadas y el detalle del último archivo subido (nombre, fecha, cantidad de registros).",
+)
+async def resumen_importaciones_masivas(
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_module("Visualización de Resultados")),
+):
+    # Total de lotes
+    total = (await db.execute(select(func.count()).select_from(LotePrediccion))).scalar() or 0
+
+    # Último lote (más reciente por fecha_carga)
+    r_ultimo = await db.execute(
+        select(LotePrediccion).order_by(LotePrediccion.fecha_carga.desc()).limit(1)
+    )
+    ultimo = r_ultimo.scalar_one_or_none()
+
+    ultima_importacion = None
+    if ultimo:
+        ultima_importacion = UltimaImportacionMasiva(
+            nombre_archivo=ultimo.nombre_archivo,
+            fecha_carga=ultimo.fecha_carga,
+            cantidad_registros=ultimo.total_estudiantes,
+        )
+
+    return ResumenImportacionMasivaResponse(
+        total_importaciones=total,
+        ultima_importacion=ultima_importacion,
     )
 
 

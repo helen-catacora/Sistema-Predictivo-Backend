@@ -174,3 +174,16 @@ class DashboardResponse(BaseModel):
     resumen_general: ResumenGeneral
     distribucion_riesgo: list[DistribucionRiesgoItem]
     distribucion_por_paralelo: list[DistribucionParaleloItem]
+
+
+class UltimaImportacionMasiva(BaseModel):
+    """Detalle del último archivo subido para predicción masiva."""
+    nombre_archivo: str
+    fecha_carga: datetime
+    cantidad_registros: int
+
+
+class ResumenImportacionMasivaResponse(BaseModel):
+    """Resumen de importaciones masivas: total de cargas y detalle de la última."""
+    total_importaciones: int
+    ultima_importacion: UltimaImportacionMasiva | None

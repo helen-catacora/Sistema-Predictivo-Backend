@@ -28,6 +28,7 @@ from app.models import (
 from app.models.paralelo import Paralelo
 from app.models.asistencia import EstadoAsistencia
 from app.models.alerta import EstadoAlerta
+from app.models.lote_importacion_estudiante import LoteImportacionEstudiante
 from app.schemas.estudiante import (
     EstudianteSociodemograficoUpdate,
     EstudiantePerfilResponse,
@@ -49,6 +50,8 @@ from app.schemas.estudiante import (
     PerfilPrediccionHistorial,
     PerfilRiesgoPrediccion,
     PerfilSociodemografico,
+    ResumenImportacionEstudiantesResponse,
+    UltimaImportacionEstudiante,
 )
 from app.services.alerta_service import verificar_inasistencias_consecutivas
 
@@ -795,6 +798,16 @@ async def importar_estudiantes(
                 await nested.rollback()
                 resumen.inscripciones_existentes += 1
 
+    # Registrar el lote de importación para trazabilidad
+    lote = LoteImportacionEstudiante(
+        nombre_archivo=nombre_archivo,
+        usuario_id=usuario.id,
+        total_filas=len(df),
+        estudiantes_creados=estudiantes_creados,
+        estudiantes_actualizados=estudiantes_actualizados,
+        total_errores=len(errores),
+    )
+    db.add(lote)
     await db.commit()
 
     return ImportacionEstudiantesResponse(
@@ -805,4 +818,39 @@ async def importar_estudiantes(
         total_errores=len(errores),
         errores=errores,
         resumen=resumen,
+    )
+
+
+@router.get(
+    "/resumen-importaciones",
+    response_model=ResumenImportacionEstudiantesResponse,
+    summary="Resumen de importaciones de estudiantes",
+    description="Devuelve el total de archivos subidos para creación de estudiantes y el detalle del último (nombre, fecha, cantidad de registros).",
+)
+async def resumen_importaciones_estudiantes(
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    total = (
+        await db.execute(select(func.count()).select_from(LoteImportacionEstudiante))
+    ).scalar() or 0
+
+    r_ultimo = await db.execute(
+        select(LoteImportacionEstudiante)
+        .order_by(LoteImportacionEstudiante.fecha_carga.desc())
+        .limit(1)
+    )
+    ultimo = r_ultimo.scalar_one_or_none()
+
+    ultima_importacion = None
+    if ultimo:
+        ultima_importacion = UltimaImportacionEstudiante(
+            nombre_archivo=ultimo.nombre_archivo,
+            fecha_carga=ultimo.fecha_carga,
+            cantidad_registros=ultimo.total_filas,
+        )
+
+    return ResumenImportacionEstudiantesResponse(
+        total_importaciones=total,
+        ultima_importacion=ultima_importacion,
     )
