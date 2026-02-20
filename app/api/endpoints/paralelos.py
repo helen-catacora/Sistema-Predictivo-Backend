@@ -35,7 +35,10 @@ async def listar_paralelos(
     """Devuelve paralelos según el rol: todos si es Superadministrador/Administrador, si no solo los del encargado."""
     q = (
         select(Paralelo)
-        .options(selectinload(Paralelo.encargado))
+        .options(
+            selectinload(Paralelo.encargado),
+            selectinload(Paralelo.area),
+        )
         .order_by(Paralelo.nombre)
     )
     # Consultar nombre del rol directamente (evita problemas de sesión/identity map)
@@ -55,6 +58,7 @@ async def listar_paralelos(
             id=p.id,
             nombre=p.nombre,
             area_id=p.area_id,
+            area_nombre=p.area.nombre if p.area else None,
             semestre_id=p.semestre_id,
             encargado_id=p.encargado_id,
             nombre_encargado=p.encargado.nombre if p.encargado else "",
@@ -80,7 +84,10 @@ async def actualizar_encargado_paralelo(
     # Verificar que el paralelo existe
     r_paralelo = await db.execute(
         select(Paralelo)
-        .options(selectinload(Paralelo.encargado))
+        .options(
+            selectinload(Paralelo.encargado),
+            selectinload(Paralelo.area),
+        )
         .where(Paralelo.id == paralelo_id)
     )
     paralelo = r_paralelo.scalar_one_or_none()
@@ -114,6 +121,7 @@ async def actualizar_encargado_paralelo(
         id=paralelo.id,
         nombre=paralelo.nombre,
         area_id=paralelo.area_id,
+        area_nombre=paralelo.area.nombre if paralelo.area else None,
         semestre_id=paralelo.semestre_id,
         encargado_id=paralelo.encargado_id,
         nombre_encargado=nuevo_encargado.nombre,

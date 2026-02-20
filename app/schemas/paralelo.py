@@ -3,11 +3,12 @@ from pydantic import BaseModel, Field
 
 
 class ParaleloItem(BaseModel):
-    """Paralelo con id, nombre, area_id, semestre_id y datos del encargado."""
+    """Paralelo con id, nombre, area_id, area_nombre, semestre_id y datos del encargado."""
 
     id: int = Field(description="ID del paralelo")
     nombre: str = Field(description="Nombre del paralelo (ej. 1-A, 1-B)")
     area_id: int = Field(description="ID del área")
+    area_nombre: str | None = Field(default=None, description="Nombre del área (carrera)")
     semestre_id: int | None = Field(default=None, description="ID del semestre (opcional)")
     encargado_id: int = Field(description="ID del usuario encargado del paralelo")
     nombre_encargado: str = Field(description="Nombre del usuario encargado del paralelo")
