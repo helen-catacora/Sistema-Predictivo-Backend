@@ -18,8 +18,8 @@ class MallaCurricular(Base):
     __tablename__ = "malla_curricular"
     __table_args__ = (
         UniqueConstraint(
-            "materia_id", "area_id", "semestre_id",
-            name="uq_malla_curricular_materia_area_semestre"
+            "materia_id", "area_id", "semestre_id", "nombre_malla",
+            name="uq_malla_curricular_materia_area_semestre_nombre"
         ),
     )
 

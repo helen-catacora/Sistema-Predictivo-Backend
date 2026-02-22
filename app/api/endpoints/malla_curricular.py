@@ -55,6 +55,7 @@ async def importar_malla_curricular(
     contenido = await archivo.read()
     try:
         df = pd.read_excel(BytesIO(contenido), engine="openpyxl")
+        df.columns = df.columns.str.strip()
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -91,8 +92,8 @@ async def importar_malla_curricular(
     materias_cache: dict[str, Materia] = {m.nombre: m for m in res.scalars().all()}
 
     res = await db.execute(select(MallaCurricular))
-    malla_cache: dict[tuple[int, int, int], MallaCurricular] = {
-        (mc.materia_id, mc.area_id, mc.semestre_id): mc
+    malla_cache: dict[tuple[int, int, int, str | None], MallaCurricular] = {
+        (mc.materia_id, mc.area_id, mc.semestre_id, mc.nombre_malla): mc
         for mc in res.scalars().all()
         if mc.materia_id is not None and mc.area_id is not None and mc.semestre_id is not None
     }
@@ -151,7 +152,7 @@ async def importar_malla_curricular(
 
         materia = materias_cache[nombre_materia]
 
-        clave = (materia.id, area.id, semestre.id)
+        clave = (materia.id, area.id, semestre.id, nombre_malla)
         if clave in malla_cache:
             ya_existentes += 1
             continue
