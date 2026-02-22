@@ -696,8 +696,10 @@ async def importar_estudiantes(
                                     setattr(est, campo, valor)
                             else:
                                 setattr(est, campo, valor)
-                if nombre_malla:
-                    est.nombre_malla = nombre_malla
+                nombre_malla_fila = _val(row, "nombre_malla") if "nombre_malla" in df.columns else None
+                malla_a_asignar = nombre_malla_fila or nombre_malla
+                if malla_a_asignar:
+                    est.nombre_malla = malla_a_asignar
                 estudiantes_actualizados += 1
             else:
                 # Crear nuevo
@@ -718,8 +720,10 @@ async def importar_estudiantes(
                                     valor = None
                             kwargs[campo] = valor
                 est = Estudiante(**kwargs)
-                if nombre_malla:
-                    est.nombre_malla = nombre_malla
+                nombre_malla_fila = _val(row, "nombre_malla") if "nombre_malla" in df.columns else None
+                malla_a_asignar = nombre_malla_fila or nombre_malla
+                if malla_a_asignar:
+                    est.nombre_malla = malla_a_asignar
                 db.add(est)
                 await db.flush()
                 estudiantes_cache[codigo] = est
