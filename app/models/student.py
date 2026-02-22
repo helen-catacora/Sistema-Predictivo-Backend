@@ -35,6 +35,7 @@ class Estudiante(Base):
     apoyo_economico: Mapped[str | None] = mapped_column(Text, nullable=True)
     modalidad_ingreso: Mapped[str | None] = mapped_column(Text, nullable=True)
     tipo_colegio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nombre_malla: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     paralelo: Mapped["Paralelo"] = relationship("Paralelo", back_populates="estudiantes")
     inscripciones: Mapped[list["Inscripcion"]] = relationship(

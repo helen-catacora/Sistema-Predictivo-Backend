@@ -4,7 +4,7 @@ from io import BytesIO
 from typing import Annotated
 
 import pandas as pd
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -478,6 +478,7 @@ def _val(row, col):
 )
 async def importar_estudiantes(
     archivo: UploadFile = File(..., description="Archivo Excel (.xlsx)"),
+    nombre_malla: str | None = Form(default=None, description="Malla curricular a asignar a todos los estudiantes del lote (opcional). Debe coincidir con un nombre_malla existente en malla_curricular."),
     db: AsyncSession = Depends(get_db),
     usuario: Usuario = Depends(get_current_user),
 ):
@@ -700,6 +701,8 @@ async def importar_estudiantes(
                                     setattr(est, campo, valor)
                             else:
                                 setattr(est, campo, valor)
+                if nombre_malla:
+                    est.nombre_malla = nombre_malla
                 estudiantes_actualizados += 1
             else:
                 # Crear nuevo
@@ -720,6 +723,8 @@ async def importar_estudiantes(
                                     valor = None
                             kwargs[campo] = valor
                 est = Estudiante(**kwargs)
+                if nombre_malla:
+                    est.nombre_malla = nombre_malla
                 db.add(est)
                 await db.flush()
                 estudiantes_cache[codigo] = est
