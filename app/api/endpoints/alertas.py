@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.endpoints.auth import require_module
+from app.api.endpoints.auth import get_current_user
 from app.core.database import get_db
 from app.models import Alerta, Estudiante, Paralelo, Usuario
 from app.schemas.alerta import (
@@ -28,7 +28,7 @@ router = APIRouter(prefix="/alertas", tags=["alertas"])
 )
 async def listar_alertas(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Visualización de Resultados")),
+    _: Usuario = Depends(get_current_user),
     estado: Annotated[str | None, Query(description="Filtrar por estado")] = None,
     tipo: Annotated[str | None, Query(description="temprana, critica o abandono")] = None,
     nivel: Annotated[str | None, Query(description="Bajo, Medio, Alto o Critico")] = None,
@@ -114,7 +114,7 @@ async def actualizar_alerta(
     alerta_id: int,
     body: AlertaUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: Usuario = Depends(require_module("Visualización de Resultados")),
+    current_user: Usuario = Depends(get_current_user),
 ):
     q = select(Alerta).where(Alerta.id == alerta_id)
     result = await db.execute(q)

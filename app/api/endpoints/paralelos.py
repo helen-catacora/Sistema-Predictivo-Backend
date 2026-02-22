@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.endpoints.auth import get_current_user, require_module
+from app.api.endpoints.auth import get_current_user
 from app.core.database import get_db
 from app.models import Area, Paralelo, Rol, Semestre, Usuario
 from app.schemas.paralelo import ParaleloCreate, ParaleloItem, ParaleloListResponse, ParaleloUpdate
@@ -78,7 +78,7 @@ async def listar_paralelos(
 async def crear_paralelo(
     body: ParaleloCreate,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Gestión de Usuarios")),
+    _: Usuario = Depends(get_current_user),
 ):
     """Crea un paralelo validando que el área, semestre (si aplica) y encargado existen."""
 
@@ -159,7 +159,7 @@ async def actualizar_encargado_paralelo(
     paralelo_id: int,
     body: ParaleloUpdate,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Gestión de Usuarios")),
+    _: Usuario = Depends(get_current_user),
 ):
     """Actualiza el encargado_id del paralelo indicado."""
     # Verificar que el paralelo existe

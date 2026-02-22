@@ -10,7 +10,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.endpoints.auth import require_module
+from app.api.endpoints.auth import get_current_user
 from app.core.database import get_db
 from app.models import (
     Accion,
@@ -76,7 +76,7 @@ TIPOS_INFO = [
     summary="Tipos de reporte disponibles",
 )
 async def listar_tipos(
-    _: Usuario = Depends(require_module("Reportes")),
+    _: Usuario = Depends(get_current_user),
 ):
     return TiposReporteResponse(tipos=TIPOS_INFO)
 
@@ -91,7 +91,7 @@ async def listar_tipos(
 )
 async def historial_reportes(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Reportes")),
+    _: Usuario = Depends(get_current_user),
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
@@ -138,7 +138,7 @@ async def historial_reportes(
 async def generar_reporte(
     body: ReporteGenerarRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: Usuario = Depends(require_module("Reportes")),
+    current_user: Usuario = Depends(get_current_user),
 ):
     if body.tipo == "por_paralelo" and not body.paralelo_id:
         raise HTTPException(status_code=400, detail="paralelo_id es requerido para el reporte por_paralelo")

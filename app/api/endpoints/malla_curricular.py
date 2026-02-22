@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.endpoints.auth import require_module
+from app.api.endpoints.auth import get_current_user
 from app.core.database import get_db
 from app.models import Area, MallaCurricular, Materia, Semestre
 from app.models import Usuario
@@ -42,7 +42,7 @@ async def importar_malla_curricular(
     archivo: UploadFile = File(..., description="Archivo Excel (.xlsx)"),
     nombre_malla: str = Form(..., description="Nombre de la malla curricular (ej. 'Competencias 2024-2028')"),
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("configuracion")),
+    _: Usuario = Depends(get_current_user),
 ):
     # ── Fase 0: Validación del archivo ──────────────────────────────
     nombre_archivo = archivo.filename or "sin_nombre"

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.endpoints.auth import get_current_user, require_module
+from app.api.endpoints.auth import get_current_user
 from app.core.database import get_db
 from app.models import Asistencia, Estudiante, Inscripcion, Materia, Paralelo
 from app.models import Usuario
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/asistencias", tags=["asistencias"])
 )
 async def listar_asistencia_dia(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Control de Asistencia")),
+    _: Usuario = Depends(get_current_user),
     materia_id: Annotated[int, Query(description="ID de la materia")] = ...,
     paralelo_id: Annotated[int, Query(description="ID del paralelo")] = ...,
     fecha: Annotated[date | None, Query(description="Fecha del día (por defecto hoy)")] = None,
@@ -129,7 +129,7 @@ async def listar_asistencia_dia(
 async def crear_asistencia_dia(
     body: AsistenciaDiaUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: Usuario = Depends(require_module("Control de Asistencia")),
+    current_user: Usuario = Depends(get_current_user),
     materia_id: Annotated[int, Query(description="ID de la materia")] = ...,
     paralelo_id: Annotated[int, Query(description="ID del paralelo")] = ...,
     fecha: Annotated[date | None, Query(description="Fecha del día (por defecto hoy)")] = None,

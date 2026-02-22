@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.endpoints.auth import require_module
+from app.api.endpoints.auth import get_current_user
 from app.core.database import get_db
 from app.models import (
     Accion,
@@ -88,7 +88,7 @@ def get_prediccion_service(request: Request) -> PrediccionService:
 async def prediccion_individual(
     body: PrediccionIndividualRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: Usuario = Depends(require_module("Visualización de Resultados")),
+    current_user: Usuario = Depends(get_current_user),
     ml: PrediccionService = Depends(get_prediccion_service),
 ):
     # Buscar estudiante con su paralelo → semestre y área
@@ -156,7 +156,7 @@ async def prediccion_individual(
 async def prediccion_masiva(
     archivo: UploadFile = File(..., description="Archivo Excel (.xlsx)"),
     db: AsyncSession = Depends(get_db),
-    current_user: Usuario = Depends(require_module("Visualización de Resultados")),
+    current_user: Usuario = Depends(get_current_user),
     ml: PrediccionService = Depends(get_prediccion_service),
     gestion_id: Annotated[int | None, Query(description="ID de la gestión académica")] = None,
 ):
@@ -278,7 +278,7 @@ async def prediccion_masiva(
 )
 async def historial_predicciones(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Visualización de Resultados")),
+    _: Usuario = Depends(get_current_user),
     estudiante_id: Annotated[int | None, Query(description="Filtrar por estudiante")] = None,
     nivel_riesgo: Annotated[str | None, Query(description="Filtrar por nivel")] = None,
     tipo: Annotated[str | None, Query(description="individual o masiva")] = None,
@@ -349,7 +349,7 @@ async def historial_predicciones(
 async def evolucion_estudiante(
     estudiante_id: int,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Visualización de Resultados")),
+    _: Usuario = Depends(get_current_user),
 ):
     # Estudiante
     q = select(Estudiante).where(Estudiante.id == estudiante_id)
@@ -426,7 +426,7 @@ async def evolucion_estudiante(
 )
 async def listar_lotes(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Visualización de Resultados")),
+    _: Usuario = Depends(get_current_user),
 ):
     q = (
         select(LotePrediccion)
@@ -465,7 +465,7 @@ async def listar_lotes(
 async def detalle_lote(
     lote_id: int,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Visualización de Resultados")),
+    _: Usuario = Depends(get_current_user),
 ):
     q = (
         select(LotePrediccion)
@@ -524,7 +524,7 @@ async def detalle_lote(
 )
 async def dashboard(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Visualización de Resultados")),
+    _: Usuario = Depends(get_current_user),
     paralelo_id: Annotated[int | None, Query(description="Filtrar por paralelo")] = None,
 ):
     # Subquery: última predicción por estudiante (por fecha_prediccion DESC, id DESC)
@@ -642,7 +642,7 @@ async def dashboard(
 )
 async def resumen_importaciones_masivas(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Visualización de Resultados")),
+    _: Usuario = Depends(get_current_user),
 ):
     # Total de lotes
     total = (await db.execute(select(func.count()).select_from(LotePrediccion))).scalar() or 0

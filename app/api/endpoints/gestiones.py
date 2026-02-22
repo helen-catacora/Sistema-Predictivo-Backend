@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.endpoints.auth import get_current_user, require_module
+from app.api.endpoints.auth import get_current_user
 from app.core.database import get_db
 from app.models import GestionAcademica, Usuario
 from app.schemas.gestion_academica import (
@@ -50,7 +50,7 @@ async def listar_gestiones(
 async def crear_gestion(
     body: GestionAcademicaCreate,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Gestión de Usuarios")),
+    _: Usuario = Depends(get_current_user),
 ):
     # Verificar nombre único
     existing = await db.execute(
@@ -86,7 +86,7 @@ async def crear_gestion(
 async def activar_gestion(
     gestion_id: int,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Gestión de Usuarios")),
+    _: Usuario = Depends(get_current_user),
 ):
     q = select(GestionAcademica).where(GestionAcademica.id == gestion_id)
     result = await db.execute(q)

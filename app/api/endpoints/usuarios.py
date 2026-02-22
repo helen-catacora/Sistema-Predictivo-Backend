@@ -4,7 +4,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.endpoints.auth import require_module
+from app.api.endpoints.auth import get_current_user
 from app.core.database import get_db
 from app.core.security import hash_password
 from app.models import Modulo, Rol, Usuario, UsuarioModulo
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/usuarios", tags=["usuarios"])
 )
 async def listar_usuarios(
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Gestión de Usuarios")),
+    _: Usuario = Depends(get_current_user),
 ):
     """Devuelve los usuarios con nombre, correo, nombre del rol y estado."""
     q = (
@@ -64,7 +64,7 @@ async def listar_usuarios(
 async def crear_usuario(
     body: UsuarioCreate,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Gestión de Usuarios")),
+    _: Usuario = Depends(get_current_user),
 ):
     """Crea un usuario con los datos del body. El estado se establece en inactivo."""
     # Correo único
@@ -125,7 +125,7 @@ async def actualizar_estado_y_modulos(
     usuario_id: int,
     body: UsuarioUpdateEstadoModulos,
     db: AsyncSession = Depends(get_db),
-    _: Usuario = Depends(require_module("Gestión de Usuarios")),
+    _: Usuario = Depends(get_current_user),
 ):
     """Actualiza los campos enviados del usuario (nombre, carnet, teléfono, cargo, correo, rol_id, estado, módulos)."""
     r = await db.execute(
