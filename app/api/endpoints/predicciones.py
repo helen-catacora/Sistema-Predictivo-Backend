@@ -3,6 +3,7 @@ import logging
 import math
 from datetime import date
 from typing import Annotated
+from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
@@ -165,8 +166,9 @@ async def prediccion_masiva(
     # Leer Excel
     try:
         contents = await archivo.read()
-        df = pd.read_excel(contents, engine="openpyxl")
+        df = pd.read_excel(BytesIO(contents), engine="openpyxl")
     except Exception as e:
+        logger.exception("Error al leer el archivo Excel: %s", e)
         raise HTTPException(status_code=400, detail=f"Error al leer el archivo: {e}")
 
     if "Codigo" not in df.columns:
