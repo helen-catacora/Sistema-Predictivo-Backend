@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.endpoints.auth import get_current_user, require_module
 from app.core.database import get_db
-from app.models import Asistencia, Estudiante, Materia, Paralelo
+from app.models import Asistencia, Estudiante, Inscripcion, Materia, Paralelo
 from app.models import Usuario
 from app.models.asistencia import EstadoAsistencia
 from app.services import alerta_service
@@ -51,10 +51,14 @@ async def listar_asistencia_dia(
     paralelo_obj = r_par.scalar_one_or_none()
     nombre_paralelo = paralelo_obj.nombre if paralelo_obj else ""
 
-    # Todos los estudiantes del paralelo, ordenados por apellido y nombre
+    # Solo los estudiantes del paralelo que están inscritos en la materia seleccionada
     q_est = (
         select(Estudiante)
-        .where(Estudiante.paralelo_id == paralelo_id)
+        .join(Inscripcion, Inscripcion.estudiante_id == Estudiante.id)
+        .where(
+            Estudiante.paralelo_id == paralelo_id,
+            Inscripcion.materia_id == materia_id,
+        )
         .order_by(Estudiante.apellido, Estudiante.nombre)
     )
     result_est = await db.execute(q_est)
@@ -139,15 +143,20 @@ async def crear_asistencia_dia(
     if fecha is None:
         fecha = date.today()
 
-    # Estudiantes que pertenecen al paralelo (para validar)
+    # Estudiantes inscritos en la materia y pertenecientes al paralelo (para validar)
     r = await db.execute(
-        select(Estudiante.id).where(Estudiante.paralelo_id == paralelo_id)
+        select(Estudiante.id)
+        .join(Inscripcion, Inscripcion.estudiante_id == Estudiante.id)
+        .where(
+            Estudiante.paralelo_id == paralelo_id,
+            Inscripcion.materia_id == materia_id,
+        )
     )
     ids_paralelo = {row[0] for row in r.all()}
     if not ids_paralelo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No hay estudiantes en el paralelo indicado",
+            detail="No hay estudiantes inscritos en esta materia para el paralelo indicado",
         )
 
     # Registros existentes del día (materia + fecha) para estos estudiantes
