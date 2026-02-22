@@ -2,7 +2,7 @@
 from io import BytesIO
 
 import pandas as pd
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,6 +40,7 @@ def _val(row, col):
 )
 async def importar_malla_curricular(
     archivo: UploadFile = File(..., description="Archivo Excel (.xlsx)"),
+    nombre_malla: str = Form(..., description="Nombre de la malla curricular (ej. 'Competencias 2024-2028')"),
     db: AsyncSession = Depends(get_db),
     _: Usuario = Depends(require_module("configuracion")),
 ):
@@ -159,6 +160,7 @@ async def importar_malla_curricular(
             materia_id=materia.id,
             area_id=area.id,
             semestre_id=semestre.id,
+            nombre_malla=nombre_malla,
         )
         db.add(nuevo_registro)
         await db.flush()
