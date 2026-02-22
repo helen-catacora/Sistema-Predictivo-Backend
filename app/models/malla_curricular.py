@@ -1,7 +1,7 @@
 """Modelo Malla Curricular (materia por área y semestre)."""
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, ForeignKey, Identity, UniqueConstraint
+from sqlalchemy import BigInteger, ForeignKey, Identity, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -33,6 +33,7 @@ class MallaCurricular(Base):
     semestre_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("semestres.id"), nullable=True
     )
+    nombre_malla: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     materia: Mapped["Materia"] = relationship("Materia", back_populates="mallas")
     area: Mapped["Area"] = relationship("Area", back_populates="mallas")

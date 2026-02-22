@@ -9,6 +9,7 @@ from app.api.endpoints import (
     asistencias,
     estudiantes,
     gestiones,
+    malla_curricular,
     materias,
     modulos,
     paralelos,
@@ -28,6 +29,7 @@ router = APIRouter()
 router.include_router(estudiantes.router)
 router.include_router(paralelos.router)
 router.include_router(materias.router)
+router.include_router(malla_curricular.router)
 router.include_router(asistencias.router)
 router.include_router(usuarios.router)
 router.include_router(predicciones.router)
