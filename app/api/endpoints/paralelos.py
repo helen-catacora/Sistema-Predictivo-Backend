@@ -6,8 +6,8 @@ from sqlalchemy.orm import selectinload
 
 from app.api.endpoints.auth import get_current_user, require_module
 from app.core.database import get_db
-from app.models import Paralelo, Rol, Usuario
-from app.schemas.paralelo import ParaleloItem, ParaleloListResponse, ParaleloUpdate
+from app.models import Area, Paralelo, Rol, Semestre, Usuario
+from app.schemas.paralelo import ParaleloCreate, ParaleloItem, ParaleloListResponse, ParaleloUpdate
 
 # Roles que ven todos los paralelos (nombre normalizado: minúsculas y sin espacios)
 ROLES_VEN_TODOS_PARALELOS = ("superadministrador", "administrador")
@@ -66,6 +66,87 @@ async def listar_paralelos(
         for p in paralelos
     ]
     return ParaleloListResponse(paralelos=items)
+
+
+@router.post(
+    "",
+    response_model=ParaleloItem,
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear paralelo",
+    description="Crea un nuevo paralelo. Requiere módulo Gestión de Usuarios. El área y el encargado deben existir; el semestre es opcional.",
+)
+async def crear_paralelo(
+    body: ParaleloCreate,
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_module("Gestión de Usuarios")),
+):
+    """Crea un paralelo validando que el área, semestre (si aplica) y encargado existen."""
+
+    # Validar área
+    r_area = await db.execute(select(Area).where(Area.id == body.area_id))
+    area = r_area.scalar_one_or_none()
+    if not area:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Área no encontrada",
+        )
+
+    # Validar semestre (opcional)
+    semestre = None
+    if body.semestre_id is not None:
+        r_sem = await db.execute(select(Semestre).where(Semestre.id == body.semestre_id))
+        semestre = r_sem.scalar_one_or_none()
+        if not semestre:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Semestre no encontrado",
+            )
+
+    # Validar encargado
+    r_enc = await db.execute(select(Usuario).where(Usuario.id == body.encargado_id))
+    encargado = r_enc.scalar_one_or_none()
+    if not encargado:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuario encargado no encontrado",
+        )
+    if encargado.estado != "activo":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El usuario debe estar activo para ser asignado como encargado",
+        )
+
+    # Validar unicidad (nombre + area_id)
+    r_dup = await db.execute(
+        select(Paralelo).where(
+            Paralelo.nombre == body.nombre,
+            Paralelo.area_id == body.area_id,
+        )
+    )
+    if r_dup.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Ya existe un paralelo '{body.nombre}' en esa área",
+        )
+
+    nuevo = Paralelo(
+        nombre=body.nombre,
+        area_id=body.area_id,
+        semestre_id=body.semestre_id,
+        encargado_id=body.encargado_id,
+    )
+    db.add(nuevo)
+    await db.flush()
+
+    return ParaleloItem(
+        id=nuevo.id,
+        nombre=nuevo.nombre,
+        area_id=nuevo.area_id,
+        area_nombre=area.nombre,
+        semestre_id=nuevo.semestre_id,
+        encargado_id=nuevo.encargado_id,
+        nombre_encargado=encargado.nombre,
+    )
 
 
 @router.patch(

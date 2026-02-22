@@ -20,6 +20,15 @@ class ParaleloListResponse(BaseModel):
     paralelos: list[ParaleloItem] = Field(description="Lista de paralelos")
 
 
+class ParaleloCreate(BaseModel):
+    """Body para crear un nuevo paralelo."""
+
+    nombre: str = Field(description="Nombre del paralelo (ej. 1-A, 2-B)")
+    area_id: int = Field(description="ID del área a la que pertenece el paralelo")
+    semestre_id: int | None = Field(default=None, description="ID del semestre (opcional)")
+    encargado_id: int = Field(description="ID del usuario encargado del paralelo")
+
+
 class ParaleloUpdate(BaseModel):
     """Body para actualizar el encargado de un paralelo."""
 
