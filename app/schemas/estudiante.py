@@ -83,6 +83,10 @@ class ImportacionEstudiantesResponse(BaseModel):
     total_errores: int = Field(default=0)
     errores: list[ImportacionErrorItem] = Field(default_factory=list)
     resumen: ImportacionResumen = Field(default_factory=ImportacionResumen)
+    materias_no_encontradas: list[str] = Field(
+        default_factory=list,
+        description="Materias del Excel que no existen en la base de datos y fueron ignoradas",
+    )
 
 
 # ── Perfil individual del estudiante ──────────────────────────────

@@ -617,20 +617,9 @@ async def importar_estudiantes(
             paralelos_cache[key] = paralelo
             resumen.paralelos_creados += 1
 
-    # 2.4 Materias únicas (extraídas de la columna Materias)
-    if "Materias" in df.columns:
-        todas_materias: set[str] = set()
-        for celda in df["Materias"].dropna().unique():
-            todas_materias.update(_parse_materias(str(celda)))
-        for nombre_mat in todas_materias:
-            if nombre_mat not in materias_cache:
-                materia = Materia(nombre=nombre_mat)
-                db.add(materia)
-                await db.flush()
-                materias_cache[nombre_mat] = materia
-                resumen.materias_creadas += 1
-
     # ── Fase 3: Procesamiento fila por fila ─────────────────────────
+
+    materias_no_encontradas: set[str] = set()
 
     for idx, row in df.iterrows():
         fila_num = int(idx) + 2  # +2: encabezado + 0-indexed
@@ -764,10 +753,7 @@ async def importar_estudiantes(
         for nombre_mat in nombres_materias:
             materia_obj = materias_cache.get(nombre_mat)
             if not materia_obj:
-                errores.append(ImportacionErrorItem(
-                    fila=fila_num, codigo=codigo,
-                    mensaje=f"Materia '{nombre_mat}' no encontrada en cache (error interno)",
-                ))
+                materias_no_encontradas.add(nombre_mat)
                 continue
 
             # Malla curricular (usar savepoint para manejar duplicados UNIQUE)
@@ -823,6 +809,7 @@ async def importar_estudiantes(
         total_errores=len(errores),
         errores=errores,
         resumen=resumen,
+        materias_no_encontradas=sorted(materias_no_encontradas),
     )
 
 
