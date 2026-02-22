@@ -242,6 +242,7 @@ async def get_estudiante_perfil(
         genero=est.genero,
         carrera=est.paralelo.area.nombre if est.paralelo and est.paralelo.area else None,
         paralelo=paralelo_info,
+        nombre_malla=est.nombre_malla,
     )
 
     datos_socio = PerfilSociodemografico(
@@ -255,11 +256,24 @@ async def get_estudiante_perfil(
         tipo_colegio=est.tipo_colegio,
     )
 
-    # ── 2. Asistencias agrupadas por materia ──────────────────────
+    # ── 2. Desempeño académico: materias desde inscripciones + asistencias ──
+
+    # Paso A: Todas las materias inscritas (fuente de verdad de la lista)
+    q_insc = (
+        select(Inscripcion.materia_id, Inscripcion.gestion_academica, Materia.nombre)
+        .join(Materia, Materia.id == Inscripcion.materia_id)
+        .where(Inscripcion.estudiante_id == estudiante_id)
+    )
+    res_insc = await db.execute(q_insc)
+    # materia_id → (gestion_academica, nombre_materia)
+    materias_inscritas: dict[int, tuple[str | None, str]] = {
+        r.materia_id: (r.gestion_academica, r.nombre) for r in res_insc.all()
+    }
+
+    # Paso B: Estadísticas de asistencia agrupadas por materia
     q_asis = (
         select(
             Asistencia.materia_id,
-            Materia.nombre.label("materia_nombre"),
             func.sum(case(
                 (Asistencia.estado.in_([EstadoAsistencia.PRESENTE, EstadoAsistencia.JUSTIFICADO]), 1),
                 else_=0,
@@ -281,41 +295,33 @@ async def get_estudiante_perfil(
                 else_=0,
             )).label("total"),
         )
-        .join(Materia, Materia.id == Asistencia.materia_id)
         .where(Asistencia.estudiante_id == estudiante_id)
-        .group_by(Asistencia.materia_id, Materia.nombre)
+        .group_by(Asistencia.materia_id)
     )
     res_asis = await db.execute(q_asis)
+    # materia_id → (presentes, ausentes, justificados, total)
+    asistencias_por_materia: dict[int, tuple[int, int, int, int]] = {
+        r.materia_id: (r.presentes or 0, r.ausentes or 0, r.justificados or 0, r.total or 0)
+        for r in res_asis.all()
+    }
 
-    # Buscar gestión de cada materia inscrita
-    q_insc = (
-        select(Inscripcion.materia_id, Inscripcion.gestion_academica)
-        .where(Inscripcion.estudiante_id == estudiante_id)
-    )
-    res_insc = await db.execute(q_insc)
-    gestion_por_materia: dict[int, str] = {}
-    for r in res_insc:
-        gestion_por_materia[r.materia_id] = r.gestion_academica
-
+    # Paso C: Combinar — iterar sobre inscritas, usar asistencias si existen (0 si no)
     materias_asistencia: list[PerfilMateriaAsistencia] = []
     total_presentes_general = 0
     total_general = 0
 
-    for r in res_asis:
-        presentes = r.presentes or 0
-        ausentes = r.ausentes or 0
-        justificados = r.justificados or 0
-        total = r.total or 0
+    for materia_id, (gestion, nombre_mat) in materias_inscritas.items():
+        presentes, ausentes, justificados, total = asistencias_por_materia.get(
+            materia_id, (0, 0, 0, 0)
+        )
         porcentaje = round(100.0 * presentes / total, 1) if total else 0.0
-
-        # Para el cálculo general, presentes incluye justificados
         total_presentes_general += presentes
         total_general += total
 
         materias_asistencia.append(PerfilMateriaAsistencia(
-            materia_id=r.materia_id,
-            nombre=r.materia_nombre,
-            gestion_academica=gestion_por_materia.get(r.materia_id),
+            materia_id=materia_id,
+            nombre=nombre_mat,
+            gestion_academica=gestion,
             porcentaje_asistencia=porcentaje,
             asistencias=PerfilAsistenciaConteo(
                 presentes=presentes - justificados,  # solo presentes puros

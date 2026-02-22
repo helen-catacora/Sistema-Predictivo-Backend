@@ -112,6 +112,7 @@ class PerfilDatosBasicos(BaseModel):
     genero: str | None = None
     carrera: str | None = None
     paralelo: PerfilParalelo | None = None
+    nombre_malla: str | None = None
 
 
 class PerfilSociodemografico(BaseModel):
