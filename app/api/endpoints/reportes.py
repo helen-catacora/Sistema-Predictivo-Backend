@@ -169,7 +169,9 @@ async def generar_reporte(
     db.add(registro)
     await db.commit()
 
-    filename = f"{nombre.replace(' ', '_')}.pdf"
+    from datetime import date as _date
+    fecha_str = _date.today().strftime("%Y-%m-%d")
+    filename = f"{body.tipo}_{fecha_str}.pdf"
     return StreamingResponse(
         BytesIO(pdf_bytes),
         media_type="application/pdf",
@@ -317,7 +319,25 @@ async def _generar_estudiantes_riesgo(db: AsyncSession, body: ReporteGenerarRequ
         for p in preds
     ]
 
-    pdf = reporte_pdf_service.generar_estudiantes_riesgo(estudiantes, usuario_nombre=usuario_nombre)
+    # Total de estudiantes con predicción (para contexto interpretativo)
+    subq_total = (
+        select(
+            Prediccion.estudiante_id,
+            func.row_number()
+            .over(
+                partition_by=Prediccion.estudiante_id,
+                order_by=[Prediccion.fecha_prediccion.desc(), Prediccion.id.desc()],
+            )
+            .label("rn"),
+        )
+        .subquery()
+    )
+    q_total = select(func.count()).select_from(subq_total).where(subq_total.c.rn == 1)
+    total_con_prediccion = (await db.execute(q_total)).scalar() or 0
+
+    pdf = reporte_pdf_service.generar_estudiantes_riesgo(
+        estudiantes, usuario_nombre=usuario_nombre, total_con_prediccion=total_con_prediccion,
+    )
     return pdf, "Estudiantes en Riesgo"
 
 
@@ -516,6 +536,7 @@ async def _generar_individual(db: AsyncSession, body: ReporteGenerarRequest, usu
             "probabilidad_abandono": p.probabilidad_abandono,
             "nivel_riesgo": p.nivel_riesgo,
             "tipo": p.tipo,
+            "features_utilizadas": p.features_utilizadas,
         }
         for p in result.scalars().all()
     ]
