@@ -127,7 +127,7 @@ def _make_page_callback(titulo_reporte: str, usuario_nombre: str = ""):
         # ── Título del reporte ────────────────────────────────────
         canvas.setFont("Helvetica-Bold", 15)
         canvas.setFillColor(NAVY)
-        canvas.drawCentredString(page_width / 2, sep_y - 22, titulo_reporte)
+        canvas.drawCentredString(page_width / 2, sep_y - 22, titulo_reporte.upper())
 
         # ── Footer ────────────────────────────────────────────────
         footer_y = _BOTTOM_MARGIN - 5
@@ -618,7 +618,7 @@ def generar_predictivo_general(
         ["Alertas Activas", str(resumen.get("total_alertas_activas", 0))],
         ["Alertas Criticas", str(resumen.get("total_alertas_criticas", 0))],
     ]
-    elementos.append(_tabla_metadata(resumen_rows))
+    elementos.append(_tabla(["Indicador", "Valor"], resumen_rows, col_widths=[3.5 * inch, 2.5 * inch]))
     elementos.append(Spacer(1, 0.25 * inch))
 
     # 3. Distribución por Nivel de Riesgo
@@ -856,7 +856,7 @@ def generar_individual(
             datos_rows.append([label, str(val)])
     if datos_rows:
         elementos.append(_subtitulo("2.1 Ficha del estudiante"))
-        elementos.append(_tabla_metadata(datos_rows))
+        elementos.append(_tabla(["Campo", "Valor"], datos_rows, col_widths=[3 * inch, 4 * inch]))
     elementos.append(Spacer(1, 0.2 * inch))
 
     # 3. Historial de Predicciones
