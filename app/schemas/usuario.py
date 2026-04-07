@@ -35,6 +35,10 @@ class UsuarioUpdateEstadoModulos(BaseModel):
         default=None,
         description="Lista de IDs de módulos a los que tendrá acceso. Reemplaza la asignación actual. Si no se envía, no se modifican.",
     )
+    motivo_inactivacion: str | None = Field(
+        default=None,
+        description="Motivo por el cual se inhabilita al usuario. Solo aplica cuando estado = 'inactivo'.",
+    )
 
     @field_validator("estado")
     @classmethod
@@ -56,6 +60,7 @@ class UsuarioListItem(BaseModel):
     telefono: str | None = Field(default=None, description="Teléfono")
     cargo: str | None = Field(default=None, description="Cargo")
     estado: str = Field(description="Estado: activo o inactivo")
+    motivo_inactivacion: str | None = Field(default=None, description="Motivo de inactivación del usuario")
     modulos: list[int] = Field(default_factory=list, description="IDs de los módulos asignados al usuario")
 
 

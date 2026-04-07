@@ -17,6 +17,7 @@ from app.models.lote_prediccion import LotePrediccion, EstadoLote
 from app.models.alerta import Alerta, TipoAlerta, EstadoAlerta
 from app.models.reporte_generado import ReporteGenerado
 from app.models.lote_importacion_estudiante import LoteImportacionEstudiante
+from app.models.entrenamiento_modelo import EntrenamientoModelo
 
 __all__ = [
     "Rol",
@@ -43,4 +44,5 @@ __all__ = [
     "EstadoAlerta",
     "ReporteGenerado",
     "LoteImportacionEstudiante",
+    "EntrenamientoModelo",
 ]

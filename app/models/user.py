@@ -29,6 +29,7 @@ class Usuario(Base):
     carnet_identidad: Mapped[str | None] = mapped_column(Text, nullable=True)
     telefono: Mapped[str | None] = mapped_column(Text, nullable=True)
     cargo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    motivo_inactivacion: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     rol: Mapped["Rol"] = relationship("Rol", back_populates="usuarios")
     paralelos_encargado: Mapped[list["Paralelo"]] = relationship(

@@ -48,6 +48,7 @@ async def listar_usuarios(
             telefono=u.telefono,
             cargo=u.cargo,
             estado=u.estado,
+            motivo_inactivacion=u.motivo_inactivacion,
             modulos=[m.id for m in u.modulos],
         )
         for u in usuarios
@@ -164,6 +165,10 @@ async def actualizar_estado_y_modulos(
         usuario.rol_id = body.rol_id
     if body.estado is not None:
         usuario.estado = body.estado
+        if body.estado == "activo":
+            usuario.motivo_inactivacion = None
+        elif body.estado == "inactivo" and body.motivo_inactivacion is not None:
+            usuario.motivo_inactivacion = body.motivo_inactivacion
 
     if body.modulos is not None:
         await db.execute(delete(UsuarioModulo).where(UsuarioModulo.usuario_id == usuario_id))

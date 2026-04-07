@@ -25,11 +25,17 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60 * 24  # 24 horas
 
     # PostgreSQL 17
-    postgres_host: str = "127.0.0.1"
+    # postgres_host: str = "127.0.0.1"
+    # postgres_port: int = 5432
+    # postgres_user: str = "postgres"
+    # postgres_password: str = ""
+    # postgres_db: str = "sistema_predictivo_bd"
+
+    postgres_host: str = "aws-1-us-east-1.pooler.supabase.com"
     postgres_port: int = 5432
-    postgres_user: str = "postgres"
-    postgres_password: str = ""
-    postgres_db: str = "sistema_predictivo_bd"
+    postgres_user: str = "postgres.xitzatipxgwbfxlpsllg"
+    postgres_password: str = "helen2026.sistemapredictivo"
+    postgres_db: str = "postgres"
 
     @property
     def database_url_async(self) -> str:

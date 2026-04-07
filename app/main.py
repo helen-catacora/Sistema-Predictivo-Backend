@@ -70,6 +70,10 @@ OPENAPI_TAGS = [
         "description": "Módulos del sistema: listado de módulos disponibles para asignación a usuarios.",
     },
     {
+        "name": "entrenamiento",
+        "description": "Entrenamiento y reentrenamiento del modelo ML: iniciar, consultar estado, aceptar/rechazar, historial y plantilla.",
+    },
+    {
         "name": "salud",
         "description": "Comprobación del estado del servicio.",
     },
@@ -92,6 +96,10 @@ async def lifespan(app: FastAPI):
             settings.ml_model_dir,
         )
         app.state.prediccion_service = None
+
+    # Cargar info del modelo actual
+    from app.services.entrenamiento_service import leer_modelo_actual_info
+    app.state.model_info = leer_modelo_actual_info(settings.ml_model_dir)
 
     yield
 

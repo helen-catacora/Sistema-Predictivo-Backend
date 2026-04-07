@@ -7,6 +7,7 @@ from app.api.endpoints import (
     acciones,
     alertas,
     asistencias,
+    entrenamiento,
     estudiantes,
     gestiones,
     malla_curricular,
@@ -38,6 +39,7 @@ router.include_router(gestiones.router)
 router.include_router(reportes.router)
 router.include_router(modulos.router)
 router.include_router(acciones.router)
+router.include_router(entrenamiento.router)
 
 
 @router.get(

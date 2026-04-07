@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -265,6 +266,99 @@ async def prediccion_masiva(
         "total_critico": contadores["Critico"],
         "errores": errores[:20] if errores else [],
     }
+
+
+# ------------------------------------------------------------------
+# GET /predicciones/plantilla
+# ------------------------------------------------------------------
+@router.get(
+    "/plantilla",
+    summary="Descargar plantilla Excel para predicción masiva",
+    description="Descarga un archivo Excel (.xlsx) con las columnas requeridas para la predicción masiva.",
+)
+async def descargar_plantilla(
+    _: Usuario = Depends(get_current_user),
+):
+    from io import BytesIO as _BytesIO
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Datos"
+
+    headers = [
+        "Codigo", "Mat", "Rep", "2T", "Prom", "edad",
+        "Grado", "Genero", "estrato_socioeconomico", "ocupacion_laboral",
+        "con_quien_vive", "apoyo_economico", "modalidad_ingreso", "tipo_colegio",
+    ]
+    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True, size=11)
+
+    for col_idx, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    ejemplos = [
+        ["A12345-1", 5, 1, 0, 6.5, 20, "Civil", "Masculino", "Medio", "No",
+         "Con mis padres", "Total", "Curso Preuniversitario/Intensivo", "Publico"],
+        ["A23456-2", 4, 2, 1, 4.8, 22, "Militar", "Femenino", "Bajo", "Si",
+         "Solo/a", "Parcial", "Prueba de Suficiencia Academica", "Privado"],
+        ["A34567-3", 6, 0, 0, 7.2, 19, "Civil", "Masculino", "Alto", "No",
+         "Con Familiares", "Ninguno", "Curso Vestibular", "Convenio"],
+    ]
+    for row_idx, ejemplo in enumerate(ejemplos, 2):
+        for col_idx, val in enumerate(ejemplo, 1):
+            ws.cell(row=row_idx, column=col_idx, value=val)
+
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or "")) for cell in col)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 30)
+
+    # Hoja de instrucciones
+    ws_inst = wb.create_sheet("Instrucciones")
+    instrucciones = [
+        ("Columna", "Descripción", "Tipo", "Requerido"),
+        ("Codigo", "Código del estudiante (debe existir en el sistema)", "Texto", "Sí"),
+        ("Mat", "Cantidad de materias inscritas", "Numérico", "No"),
+        ("Rep", "Cantidad de materias reprobadas", "Numérico", "No"),
+        ("2T", "Cantidad de materias con segunda tutoría", "Numérico", "No"),
+        ("Prom", "Promedio general", "Numérico", "No"),
+        ("edad", "Edad del estudiante", "Numérico", "No"),
+        ("Grado", "Civil o Militar", "Texto", "No"),
+        ("Genero", "Masculino o Femenino", "Texto", "No"),
+        ("estrato_socioeconomico", "Bajo, Medio o Alto", "Texto", "No"),
+        ("ocupacion_laboral", "Si o No", "Texto", "No"),
+        ("con_quien_vive", "Con mis padres, Solo/a, Con Familiares, Otros", "Texto", "No"),
+        ("apoyo_economico", "Total, Parcial o Ninguno", "Texto", "No"),
+        ("modalidad_ingreso", "Curso Preuniversitario/Intensivo, PSA, Curso Vestibular, etc.", "Texto", "No"),
+        ("tipo_colegio", "Publico, Privado o Convenio", "Texto", "No"),
+    ]
+    inst_header_fill = PatternFill(start_color="2E75B6", end_color="2E75B6", fill_type="solid")
+    inst_header_font = Font(color="FFFFFF", bold=True, size=11)
+    for row_idx, row_data in enumerate(instrucciones, 1):
+        for col_idx, val in enumerate(row_data, 1):
+            cell = ws_inst.cell(row=row_idx, column=col_idx, value=val)
+            if row_idx == 1:
+                cell.fill = inst_header_fill
+                cell.font = inst_header_font
+                cell.alignment = Alignment(horizontal="center")
+    for col in ws_inst.columns:
+        max_len = max(len(str(cell.value or "")) for cell in col)
+        ws_inst.column_dimensions[col[0].column_letter].width = min(max_len + 4, 50)
+
+    output = _BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=plantilla_prediccion_masiva.xlsx"},
+    )
 
 
 # ------------------------------------------------------------------

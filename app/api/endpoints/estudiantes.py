@@ -471,6 +471,100 @@ def _val(row, col):
     return s if s else None
 
 
+# ------------------------------------------------------------------
+# GET /estudiantes/plantilla
+# ------------------------------------------------------------------
+@router.get(
+    "/plantilla",
+    summary="Descargar plantilla Excel para importar estudiantes",
+    description="Descarga un archivo Excel (.xlsx) con las columnas requeridas y opcionales para importar estudiantes.",
+)
+async def descargar_plantilla(
+    _: Usuario = Depends(get_current_user),
+):
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from fastapi.responses import StreamingResponse
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Datos"
+
+    headers = [
+        "Codigo", "Nombre", "Apellido", "Area", "Paralelo",
+        "Semestre", "Materias", "GestionAcademica",
+        "fecha_nacimiento", "grado", "nombre_malla",
+    ]
+    req_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    opt_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True, size=11)
+    required_cols = {"Codigo", "Nombre", "Apellido", "Area", "Paralelo"}
+
+    for col_idx, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.fill = req_fill if header in required_cols else opt_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    ejemplos = [
+        ["A12345-1", "Juan", "Pérez García", "Tecnologicas", "1-A",
+         "Primer", "Algebra (T), Calculo I (T), Fisica I (T), Fisica I (L), Quimica Aplicada (T), Programación I, Quimica Aplicada (L)", "2024-I",
+         "2005-03-15", "Civil", "Competencias 2024-2028"],
+        ["A23456-2", "María", "López Ríos", "Tecnologicas", "2-A",
+         "Segundo", "Algebra Lineal (T), Calculo I (T), Componentes Instrumentacion Electronica, Programación II, Fisica II (T), Calculo II (T), Fisica II (L), Estadistica",
+         "2024-I", "2004-07-22", "Militar", "Competencias 2024-2028"],
+        ["A34567-3", "Carlos", "Mamani Quispe", "No Tecnologicas", "1-A",
+         "Primer", "Algebra (T), Calculo I (T), Fisica I (T), Fisica I (L), Quimica Aplicada (T), Quimica Aplicada (L), Dibujo para la Ingeniería", "2024-I",
+         "2006-01-10", "Civil", ""],
+    ]
+    for row_idx, ejemplo in enumerate(ejemplos, 2):
+        for col_idx, val in enumerate(ejemplo, 1):
+            ws.cell(row=row_idx, column=col_idx, value=val)
+
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or "")) for cell in col)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 35)
+
+    # Hoja de instrucciones
+    ws_inst = wb.create_sheet("Instrucciones")
+    instrucciones = [
+        ("Columna", "Descripción", "Tipo", "Requerido"),
+        ("Codigo", "Código único del estudiante", "Texto", "Sí"),
+        ("Nombre", "Nombre(s) del estudiante", "Texto", "Sí"),
+        ("Apellido", "Apellido(s) del estudiante", "Texto", "Sí"),
+        ("Area", "Carrera o área académica", "Texto", "Sí"),
+        ("Paralelo", "Sección/paralelo (ej: A, B, C)", "Texto", "Sí"),
+        ("Semestre", "Nombre del semestre (ej: Primer, Segundo)", "Texto", "No"),
+        ("Materias", "Lista de materias separadas por coma", "Texto", "No"),
+        ("GestionAcademica", "Gestión académica (ej: 2024-I). Requerida si hay Materias", "Texto", "Condicional"),
+        ("fecha_nacimiento", "Fecha de nacimiento (formato YYYY-MM-DD)", "Fecha", "No"),
+        ("grado", "Civil o Militar", "Texto", "No"),
+        ("nombre_malla", "Plan curricular al que pertenece el estudiante (ej: Plan 2023)", "Texto", "No"),
+    ]
+    inst_fill = PatternFill(start_color="2E75B6", end_color="2E75B6", fill_type="solid")
+    inst_font = Font(color="FFFFFF", bold=True, size=11)
+    for row_idx, row_data in enumerate(instrucciones, 1):
+        for col_idx, val in enumerate(row_data, 1):
+            cell = ws_inst.cell(row=row_idx, column=col_idx, value=val)
+            if row_idx == 1:
+                cell.fill = inst_fill
+                cell.font = inst_font
+                cell.alignment = Alignment(horizontal="center")
+    for col in ws_inst.columns:
+        max_len = max(len(str(cell.value or "")) for cell in col)
+        ws_inst.column_dimensions[col[0].column_letter].width = min(max_len + 4, 55)
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=plantilla_registro_estudiantes.xlsx"},
+    )
+
+
 @router.post(
     "/importar",
     response_model=ImportacionEstudiantesResponse,
