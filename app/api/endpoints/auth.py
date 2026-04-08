@@ -107,10 +107,10 @@ async def get_modulos_for_usuario(db: AsyncSession, usuario_id: int) -> list[str
     )
     r_user = await db.execute(q_user)
     usuario = r_user.scalar_one_or_none()
-    if usuario and usuario.rol and usuario.rol.nombre == ROL_SUPERADMIN:
-        # Superadministrador: acceso a todos los módulos
-        r_all = await db.execute(select(Modulo.nombre))
-        return [row[0] for row in r_all.all()]
+    # if usuario and usuario.rol and usuario.rol.nombre == ROL_SUPERADMIN:
+    #     # Superadministrador: acceso a todos los módulos
+    #     r_all = await db.execute(select(Modulo.nombre))
+    #     return [row[0] for row in r_all.all()]
 
     q = (
         select(Modulo.nombre)
