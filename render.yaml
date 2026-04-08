@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: sistema-predictivo-api
+    runtime: docker
+    rootDir: sistemapredictivoBackend
+    dockerfilePath: Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      # App
+      - key: APP_NAME
+        value: Sistema Predictivo API
+      - key: DEBUG
+        value: false
+
+      # JWT — cambiar JWT_SECRET_KEY por un valor seguro en producción
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_EXPIRE_MINUTES
+        value: 1440
+
+      # PostgreSQL (Supabase pooler)
+      - key: POSTGRES_HOST
+        value: aws-1-us-east-1.pooler.supabase.com
+      - key: POSTGRES_PORT
+        value: 5432
+      - key: POSTGRES_USER
+        value: postgres.xitzatipxgwbfxlpsllg
+      - key: POSTGRES_PASSWORD
+        sync: false
+      - key: POSTGRES_DB
+        value: postgres
+
+      # Supabase Storage (artefactos ML)
+      # SUPABASE_PROJECT_URL: usar la URL de la API, NO la de la base de datos
+      # Formato correcto: https://<project-ref>.supabase.co
+      - key: SUPABASE_PROJECT_URL
+        value: https://xitzatipxgwbfxlpsllg.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: modelos_prediccion
+      - key: GDRIVE_ITER_IMPUTER_ID
+        value: 1stoh8-KlX1mKw0tLtdoxC6j9TyO6AKoN
