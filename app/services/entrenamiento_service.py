@@ -360,6 +360,17 @@ def aceptar_modelo(entrenamiento_id: int, model_dir: str) -> str:
     # Limpiar candidatos
     shutil.rmtree(candidatos_dir, ignore_errors=True)
 
+    # Subir artefactos aceptados a Supabase Storage para persistir en filesystem efímero (Render)
+    try:
+        from app.model_loader import subir_artefactos_a_supabase
+        subir_artefactos_a_supabase(model_dir, settings)
+        logger.info("Artefactos del nuevo modelo subidos a Supabase Storage.")
+    except Exception as exc:
+        logger.warning(
+            "No se pudieron subir artefactos a Supabase (el modelo está activo localmente): %s",
+            exc,
+        )
+
     return version
 
 

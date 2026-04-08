@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     # Machine Learning
     ml_model_dir: str = "ml_models"
 
+    # Supabase Storage (artefactos ML — requerido en producción)
+    supabase_project_url: str = "db.xitzatipxgwbfxlpsllg.supabase.co"       # https://xxx.supabase.co
+    supabase_service_role_key: str = "sb_publishable_UFtziML9MyVSKFkOggkmUA_YcTFxbVo"  # service_role key (para subir archivos)
+    supabase_storage_bucket: str = "modelos_prediccion"
+    gdrive_iter_imputer_id: str = "1stoh8-KlX1mKw0tLtdoxC6j9TyO6AKoN"     # ID del archivo iter_imputer.pkl en Google Drive
+
     # JWT
     jwt_secret_key: str = "cambiar-en-produccion-clave-secreta-muy-segura"
     jwt_algorithm: str = "HS256"

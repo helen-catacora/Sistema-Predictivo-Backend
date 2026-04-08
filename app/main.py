@@ -85,6 +85,13 @@ async def lifespan(app: FastAPI):
     """Gestiona el ciclo de vida: inicio y cierre de la aplicación."""
     await init_db()
 
+    # Descargar artefactos ML desde Supabase / Google Drive si no existen localmente
+    from app.model_loader import descargar_artefactos_ml
+    try:
+        descargar_artefactos_ml(settings.ml_model_dir, settings)
+    except Exception as exc:
+        logger.warning("No se pudieron descargar artefactos ML: %s", exc)
+
     # Cargar modelo ML
     try:
         app.state.prediccion_service = PrediccionService(settings.ml_model_dir)
