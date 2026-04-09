@@ -27,13 +27,15 @@ def _descargar_desde_supabase(project_url: str, bucket: str, filename: str, dest
     """Descarga un archivo desde Supabase Storage público. Retorna True si tuvo éxito."""
     url = _url_publica_supabase(project_url, bucket, filename)
     try:
-        resp = requests.get(url, timeout=120)
-        if resp.status_code == 200:
-            destino.write_bytes(resp.content)
-            logger.info("Descargado desde Supabase: %s", filename)
-            return True
-        logger.debug("Supabase respondió %s para %s", resp.status_code, filename)
-        return False
+        with requests.get(url, stream=True, timeout=120) as resp:
+            if resp.status_code == 200:
+                with open(destino, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=8 * 1024 * 1024):
+                        f.write(chunk)
+                logger.info("Descargado desde Supabase: %s", filename)
+                return True
+            logger.debug("Supabase respondió %s para %s", resp.status_code, filename)
+            return False
     except Exception as exc:
         logger.warning("Error al descargar %s desde Supabase: %s", filename, exc)
         return False
