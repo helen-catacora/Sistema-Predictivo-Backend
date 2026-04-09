@@ -2,6 +2,7 @@
 import json
 import logging
 import shutil
+import time
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
@@ -11,7 +12,8 @@ import numpy as np
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import BayesianRidge
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401
 from sklearn.impute import IterativeImputer
 from sklearn.linear_model import LogisticRegression
@@ -78,11 +80,14 @@ def entrenar_modelo(
     engine = create_engine(db_url_sync)
 
     try:
+        t0 = time.time()
+
         # --- Actualizar estado a "entrenando" ---
         with Session(engine) as session:
             ent = session.get(EntrenamientoModelo, entrenamiento_id)
             ent.estado = "entrenando"
             session.commit()
+        logger.info("[entrenamiento %d] Estado → entrenando", entrenamiento_id)
 
         # --- 1. Limpieza ---
         df = df.copy()
@@ -95,15 +100,18 @@ def entrenar_modelo(
             if col in df.columns:
                 df[col] = df[col].replace(mapeo)
 
-        # tipo_colegio: valores numéricos → nulo
         if "tipo_colegio" in df.columns:
             df["tipo_colegio"] = df["tipo_colegio"].apply(lambda x: x if isinstance(x, str) else np.nan)
-
-        # modalidad_ingreso: valor 'si' → nulo
         if "modalidad_ingreso" in df.columns:
             df["modalidad_ingreso"] = df["modalidad_ingreso"].replace({"si": np.nan})
 
         df["Abandono_num"] = (df["Abandono"] == "si").astype(int)
+        logger.info(
+            "[entrenamiento %d] Paso 1 — %d registros válidos (abandono=si: %d, no: %d) [%.1fs]",
+            entrenamiento_id, len(df),
+            (df["Abandono_num"] == 1).sum(), (df["Abandono_num"] == 0).sum(),
+            time.time() - t0,
+        )
 
         # --- 2. Label Encoding ---
         label_encoders = {}
@@ -117,14 +125,20 @@ def entrenar_modelo(
                 lambda x, _le=le: _le.transform([x])[0] if pd.notna(x) and x in _le.classes_ else np.nan
             )
             label_encoders[col] = le
+        logger.info("[entrenamiento %d] Paso 2 — Label encoding completado [%.1fs]", entrenamiento_id, time.time() - t0)
 
         # --- 3. IterativeImputer (MICE) ---
+        # BayesianRidge es el estimador por defecto de sklearn para MICE:
+        # 100× más rápido que RandomForestRegressor y diseñado para este uso.
+        # n_jobs=1 evita deadlocks en contenedores con CPU restringida (Render).
         feature_cols = NUMERIC_COLS + [c + "_enc" for c in CATEGORICAL_COLS]
         X_para_imputar = df[feature_cols].copy()
 
+        logger.info("[entrenamiento %d] Paso 3 — Iniciando MICE (BayesianRidge, max_iter=5)...", entrenamiento_id)
+        t_mice = time.time()
         iter_imputer = IterativeImputer(
-            estimator=RandomForestRegressor(n_estimators=100, random_state=RANDOM_STATE, n_jobs=-1),
-            max_iter=10,
+            estimator=BayesianRidge(),
+            max_iter=5,
             random_state=RANDOM_STATE,
         )
         X_imputado = pd.DataFrame(
@@ -132,6 +146,7 @@ def entrenar_modelo(
             columns=feature_cols,
             index=X_para_imputar.index,
         )
+        logger.info("[entrenamiento %d] Paso 3 — MICE completado en %.1fs [total: %.1fs]", entrenamiento_id, time.time() - t_mice, time.time() - t0)
 
         # Post-proceso: redondear categóricas
         for col in CATEGORICAL_COLS:
@@ -156,6 +171,7 @@ def entrenar_modelo(
 
         y = df["Abandono_num"].copy()
         feature_columns = list(X.columns)
+        logger.info("[entrenamiento %d] Paso 4 — OHE completado: %d features [%.1fs]", entrenamiento_id, len(feature_columns), time.time() - t0)
 
         # --- 5. Train/test split + scaling ---
         X_train, X_test, y_train, y_test = train_test_split(
@@ -167,8 +183,14 @@ def entrenar_modelo(
         X_test_scaled = X_test.copy()
         X_train_scaled[NUMERIC_COLS] = scaler.fit_transform(X_train[NUMERIC_COLS])
         X_test_scaled[NUMERIC_COLS] = scaler.transform(X_test[NUMERIC_COLS])
+        logger.info(
+            "[entrenamiento %d] Paso 5 — Split y scaling: train=%d, test=%d [%.1fs]",
+            entrenamiento_id, len(X_train), len(X_test), time.time() - t0,
+        )
 
         # --- 6. SMOTE + RandomizedSearchCV ---
+        # n_jobs=1 en todos lados: evita deadlocks en contenedores con CPU restringida.
+        # n_iter reducido: RF 10 (50 fits), XGBoost 15 (75 fits), LogReg 8 (40 fits) = 165 total.
         cv_strategy = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
         ratio_desbalance = (y_train == 0).sum() / max((y_train == 1).sum(), 1)
 
@@ -176,7 +198,7 @@ def entrenar_modelo(
             "Random Forest": {
                 "pipeline": ImbPipeline([
                     ("smote", SMOTE(random_state=RANDOM_STATE)),
-                    ("modelo", RandomForestClassifier(random_state=RANDOM_STATE, n_jobs=-1)),
+                    ("modelo", RandomForestClassifier(random_state=RANDOM_STATE, n_jobs=1)),
                 ]),
                 "params": {
                     "modelo__n_estimators": [100, 200, 300],
@@ -185,12 +207,12 @@ def entrenar_modelo(
                     "modelo__min_samples_leaf": [1, 2, 4],
                     "modelo__class_weight": ["balanced"],
                 },
-                "n_iter": 30,
+                "n_iter": 10,
             },
             "XGBoost": {
                 "pipeline": ImbPipeline([
                     ("smote", SMOTE(random_state=RANDOM_STATE)),
-                    ("modelo", XGBClassifier(random_state=RANDOM_STATE, eval_metric="logloss")),
+                    ("modelo", XGBClassifier(random_state=RANDOM_STATE, eval_metric="logloss", n_jobs=1)),
                 ]),
                 "params": {
                     "modelo__n_estimators": [100, 200, 300],
@@ -201,7 +223,7 @@ def entrenar_modelo(
                     "modelo__colsample_bytree": [0.7, 0.8, 0.9],
                     "modelo__scale_pos_weight": [ratio_desbalance],
                 },
-                "n_iter": 50,
+                "n_iter": 15,
             },
             "Logistic Regression": {
                 "pipeline": ImbPipeline([
@@ -213,13 +235,14 @@ def entrenar_modelo(
                     "modelo__solver": ["lbfgs", "liblinear"],
                     "modelo__class_weight": ["balanced"],
                 },
-                "n_iter": 8,  # GridSearch equivalente (pocas combinaciones)
+                "n_iter": 8,
             },
         }
 
         resultados = {}
         for nombre, config in modelos_config.items():
-            logger.info("Entrenando %s para entrenamiento_id=%d", nombre, entrenamiento_id)
+            logger.info("[entrenamiento %d] Paso 6 — Iniciando %s (n_iter=%d, cv=5)...", entrenamiento_id, nombre, config["n_iter"])
+            t_modelo = time.time()
             search = RandomizedSearchCV(
                 config["pipeline"],
                 config["params"],
@@ -227,7 +250,7 @@ def entrenar_modelo(
                 scoring="f1",
                 cv=cv_strategy,
                 random_state=RANDOM_STATE,
-                n_jobs=-1,
+                n_jobs=1,
                 refit=True,
             )
             search.fit(X_train_scaled, y_train)
@@ -250,12 +273,18 @@ def entrenar_modelo(
                 "metricas": metricas,
                 "best_params": search.best_params_,
             }
+            logger.info(
+                "[entrenamiento %d] Paso 6 — %s completado en %.1fs | F1=%.4f, ROC-AUC=%.4f [total: %.1fs]",
+                entrenamiento_id, nombre, time.time() - t_modelo,
+                metricas["f1_score"], metricas["roc_auc"], time.time() - t0,
+            )
 
         # --- 7. Seleccionar mejor modelo por F1 ---
         mejor_nombre = max(resultados, key=lambda x: resultados[x]["metricas"]["f1_score"])
         mejor = resultados[mejor_nombre]
         mejor_pipeline = mejor["pipeline"]
         mejor_modelo = mejor_pipeline.named_steps["modelo"]
+        logger.info("[entrenamiento %d] Paso 7 — Mejor modelo: %s (F1=%.4f)", entrenamiento_id, mejor_nombre, mejor["metricas"]["f1_score"])
 
         # --- 8. Guardar artefactos candidatos ---
         candidatos_dir = Path(model_dir) / "candidatos" / str(entrenamiento_id)
@@ -266,6 +295,9 @@ def entrenar_modelo(
         joblib.dump(label_encoders, candidatos_dir / "label_encoders.pkl")
         joblib.dump(iter_imputer, candidatos_dir / "iter_imputer.pkl")
         joblib.dump(feature_columns, candidatos_dir / "feature_columns.pkl")
+
+        for pkl in candidatos_dir.glob("*.pkl"):
+            logger.info("[entrenamiento %d] Paso 8 — Guardado %s (%.1f MB)", entrenamiento_id, pkl.name, pkl.stat().st_size / 1024 / 1024)
 
         # Leer métricas del modelo actual
         metricas_actual = _leer_metricas_modelo_actual(model_dir)
