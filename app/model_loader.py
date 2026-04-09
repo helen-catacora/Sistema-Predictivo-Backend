@@ -54,9 +54,9 @@ def _descargar_desde_gdrive(file_id: str, destino: Path) -> None:
 
 
 def descargar_artefactos_ml(model_dir: str, config) -> None:
-    """Descarga los 5 artefactos .pkl al directorio model_dir si no existen ya.
+    """Descarga los 5 artefactos .pkl y model_info.json al directorio model_dir si no existen ya.
 
-    - 4 archivos se descargan desde Supabase Storage (bucket público).
+    - 4 .pkl + model_info.json se descargan desde Supabase Storage (bucket público).
     - iter_imputer.pkl: primero intenta Supabase; si no está, usa Google Drive.
 
     Si supabase_project_url está vacío, se omite la descarga (entorno local con .pkl ya presentes).
@@ -68,7 +68,7 @@ def descargar_artefactos_ml(model_dir: str, config) -> None:
     model_path = Path(model_dir)
     model_path.mkdir(parents=True, exist_ok=True)
 
-    # Descargar los 4 artefactos desde Supabase
+    # Descargar los 4 artefactos .pkl desde Supabase
     for filename in _ARTEFACTOS_SUPABASE:
         destino = model_path / filename
         if destino.exists():
@@ -82,6 +82,16 @@ def descargar_artefactos_ml(model_dir: str, config) -> None:
         )
         if not ok:
             raise RuntimeError(f"No se pudo descargar {filename} desde Supabase Storage.")
+
+    # Descargar model_info.json (métricas del modelo actual — opcional, no falla si no existe)
+    info_destino = model_path / "model_info.json"
+    if not info_destino.exists():
+        _descargar_desde_supabase(
+            config.supabase_project_url,
+            config.supabase_storage_bucket,
+            "model_info.json",
+            info_destino,
+        )
 
     # Descargar iter_imputer.pkl: Supabase primero, Google Drive como fallback
     destino = model_path / _ARTEFACTO_GDRIVE
@@ -120,7 +130,7 @@ def subir_artefactos_a_supabase(model_dir: str, config) -> None:
         return
 
     model_path = Path(model_dir)
-    todos = _ARTEFACTOS_SUPABASE + [_ARTEFACTO_GDRIVE]
+    todos = _ARTEFACTOS_SUPABASE + [_ARTEFACTO_GDRIVE, "model_info.json"]
     headers = {
         "Authorization": f"Bearer {config.supabase_service_role_key}",
         "Content-Type": "application/octet-stream",
