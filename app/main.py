@@ -1,4 +1,5 @@
 """Punto de entrada de la aplicación FastAPI."""
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -80,21 +81,24 @@ OPENAPI_TAGS = [
 ]
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Gestiona el ciclo de vida: inicio y cierre de la aplicación."""
-    await init_db()
-
-    # Descargar artefactos ML desde Supabase / Google Drive si no existen localmente
+async def _cargar_modelos_en_background(app: FastAPI) -> None:
+    """Descarga y carga los artefactos ML en un hilo separado para no bloquear el startup."""
     from app.model_loader import descargar_artefactos_ml
+    from app.services.entrenamiento_service import leer_modelo_actual_info
+
+    loop = asyncio.get_event_loop()
     try:
-        descargar_artefactos_ml(settings.ml_model_dir, settings)
+        await loop.run_in_executor(
+            None, lambda: descargar_artefactos_ml(settings.ml_model_dir, settings)
+        )
     except Exception as exc:
         logger.warning("No se pudieron descargar artefactos ML: %s", exc)
 
-    # Cargar modelo ML
     try:
-        app.state.prediccion_service = PrediccionService(settings.ml_model_dir)
+        servicio = await loop.run_in_executor(
+            None, lambda: PrediccionService(settings.ml_model_dir)
+        )
+        app.state.prediccion_service = servicio
         logger.info("Modelo ML cargado desde '%s'", settings.ml_model_dir)
     except FileNotFoundError:
         logger.warning(
@@ -104,9 +108,20 @@ async def lifespan(app: FastAPI):
         )
         app.state.prediccion_service = None
 
-    # Cargar info del modelo actual
-    from app.services.entrenamiento_service import leer_modelo_actual_info
     app.state.model_info = leer_modelo_actual_info(settings.ml_model_dir)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Gestiona el ciclo de vida: inicio y cierre de la aplicación."""
+    await init_db()
+
+    # Inicializar estado provisional — los modelos se cargan en background
+    # para que uvicorn abra el puerto inmediatamente y Render lo detecte.
+    app.state.prediccion_service = None
+    app.state.model_info = None
+
+    asyncio.create_task(_cargar_modelos_en_background(app))
 
     yield
 

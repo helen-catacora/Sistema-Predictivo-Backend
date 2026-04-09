@@ -20,11 +20,13 @@ class PrediccionService:
 
     def __init__(self, model_dir: str) -> None:
         model_path = Path(model_dir)
-        self.modelo          = joblib.load(model_path / "mejor_modelo.pkl")
-        self.scaler          = joblib.load(model_path / "scaler.pkl")
-        self.label_encoders  = joblib.load(model_path / "label_encoders.pkl")
-        self.iter_imputer    = joblib.load(model_path / "iter_imputer.pkl")
-        self.feature_columns = joblib.load(model_path / "feature_columns.pkl")
+        # mmap_mode='r' mapea los artefactos a disco en lugar de cargarlos completos en RAM,
+        # lo que reduce significativamente el uso de memoria en producción (Render 512MB).
+        self.modelo          = joblib.load(model_path / "mejor_modelo.pkl", mmap_mode="r")
+        self.scaler          = joblib.load(model_path / "scaler.pkl", mmap_mode="r")
+        self.label_encoders  = joblib.load(model_path / "label_encoders.pkl", mmap_mode="r")
+        self.iter_imputer    = joblib.load(model_path / "iter_imputer.pkl", mmap_mode="r")
+        self.feature_columns = joblib.load(model_path / "feature_columns.pkl", mmap_mode="r")
 
     def predecir(self, features: dict) -> tuple[float, str, str]:
         """Predice probabilidad, nivel de riesgo y clasificación para un estudiante."""
