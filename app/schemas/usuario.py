@@ -3,7 +3,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class UsuarioCreate(BaseModel):
-    """Body para crear un nuevo usuario. Al crear, estado queda en inactivo."""
+    """Body para crear un nuevo usuario."""
 
     nombre: str = Field(description="Nombre del usuario", min_length=1)
     carnet_identidad: str | None = Field(default=None, description="Carnet de identidad")
@@ -12,6 +12,7 @@ class UsuarioCreate(BaseModel):
     correo: EmailStr = Field(description="Correo electrónico (único)")
     contraseña: str = Field(description="Contraseña en texto", min_length=1)
     rol_id: int = Field(description="ID del rol del usuario")
+    estado: str = Field(default="inactivo", description="Estado inicial del usuario: 'activo' o 'inactivo'")
     modulos: list[int] | None = Field(
         default=None,
         description="Lista de IDs de módulos a asignar. Opcional; si no se envía, el usuario se crea sin módulos.",

@@ -67,7 +67,7 @@ async def crear_usuario(
     db: AsyncSession = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
-    """Crea un usuario con los datos del body. El estado se establece en inactivo."""
+    """Crea un usuario con los datos del body. El estado se toma del campo estado del body."""
     # Correo único
     r = await db.execute(select(Usuario).where(Usuario.email == body.correo))
     if r.scalar_one_or_none():
@@ -88,7 +88,7 @@ async def crear_usuario(
         email=body.correo,
         password_hash=hash_password(body.contraseña),
         rol_id=body.rol_id,
-        estado="inactivo",
+        estado=body.estado,
         carnet_identidad=body.carnet_identidad,
         telefono=body.telefono,
         cargo=body.cargo,
