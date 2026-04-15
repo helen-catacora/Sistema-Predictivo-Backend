@@ -457,38 +457,47 @@ def _interpretar_por_paralelo(estudiantes: list[dict]) -> list[str]:
     return parrafos
 
 
-def _interpretar_asistencia(resumen_materias: list[dict]) -> list[str]:
-    parrafos = []
+def _resumen_texto_asistencia(grupos: list[dict]) -> list:
+    """Genera párrafos de texto resumiendo asistencia por semestre → paralelo.
+    Para cada paralelo indica el promedio y las materias con asistencia inferior al 70%."""
+    if not grupos:
+        return [Paragraph("No se encontraron registros de asistencia.", _ESTILO_INTERPRETACION)]
 
-    if not resumen_materias:
-        parrafos.append("No se encontraron registros de asistencia.")
-        return parrafos
+    elementos = []
+    semestres_vistos: dict[str, list[dict]] = {}
+    for g in grupos:
+        sem = g.get("semestre", "Sin Semestre")
+        semestres_vistos.setdefault(sem, []).append(g)
 
-    pcts = [m.get("porcentaje_asistencia", 0) for m in resumen_materias]
-    promedio = sum(pcts) / len(pcts) if pcts else 0
-    parrafos.append(
-        f"Asistencia promedio general: {promedio:.1f}% en {len(resumen_materias)} materia(s)."
-    )
+    for semestre, paralelos in semestres_vistos.items():
+        elementos.append(_subtitulo(semestre))
+        textos = []
+        for g in paralelos:
+            paralelo = g.get("paralelo", "")
+            materias = g.get("materias", [])
+            pcts = [m.get("porcentaje_asistencia", 0) for m in materias]
+            promedio = sum(pcts) / len(pcts) if pcts else 0.0
+            bajas = sorted(
+                [m for m in materias if m.get("porcentaje_asistencia", 0) < 70],
+                key=lambda m: m.get("porcentaje_asistencia", 0),
+            )
+            if bajas:
+                lista_bajas = ", ".join(
+                    f"{m['materia']} ({m['porcentaje_asistencia']:.1f}%)" for m in bajas
+                )
+                texto = (
+                    f"<b>Paralelo {paralelo}</b>: asistencia promedio del {promedio:.1f}%. "
+                    f"Materias con baja asistencia: {lista_bajas}."
+                )
+            else:
+                texto = (
+                    f"<b>Paralelo {paralelo}</b>: asistencia promedio del {promedio:.1f}%. "
+                    f"Sin materias con asistencia inferior al 70%."
+                )
+            textos.append(texto)
+        elementos.extend(_lista_hallazgos(textos))
 
-    bajas = [m for m in resumen_materias if m.get("porcentaje_asistencia", 0) < 70]
-    if bajas:
-        bajas_sorted = sorted(bajas, key=lambda m: m.get("porcentaje_asistencia", 0))
-        nombres = ", ".join(
-            f"{m.get('materia', '')} ({m.get('porcentaje_asistencia', 0):.1f}%)"
-            for m in bajas_sorted
-        )
-        parrafos.append(f"Materias con asistencia inferior al 70%: {nombres}.")
-
-    altas = [m for m in resumen_materias if m.get("porcentaje_asistencia", 0) >= 85]
-    if altas:
-        altas_sorted = sorted(altas, key=lambda m: -m.get("porcentaje_asistencia", 0))[:3]
-        nombres = ", ".join(
-            f"{m.get('materia', '')} ({m.get('porcentaje_asistencia', 0):.1f}%)"
-            for m in altas_sorted
-        )
-        parrafos.append(f"Materias con mayor asistencia: {nombres}.")
-
-    return parrafos
+    return elementos
 
 
 def _interpretar_individual(
@@ -496,6 +505,7 @@ def _interpretar_individual(
     predicciones: list[dict],
     alertas: list[dict],
     acciones: list[dict],
+    shap_factores: list[dict] | None = None,
 ) -> list[str]:
     parrafos = []
     nombre = estudiante.get("nombre_completo", "El estudiante")
@@ -573,6 +583,19 @@ def _interpretar_individual(
     else:
         parrafos.append("Sin acciones de seguimiento registradas.")
 
+    # Interpretación SHAP
+    if shap_factores:
+        top_riesgo = [f["nombre"] for f in shap_factores if f["tipo"] == "riesgo"][:2]
+        top_prot = [f["nombre"] for f in shap_factores if f["tipo"] == "protector"][:2]
+        if top_riesgo:
+            parrafos.append(
+                f"Principales factores que contribuyen al riesgo: {', '.join(top_riesgo)}."
+            )
+        if top_prot:
+            parrafos.append(
+                f"Factores protectores identificados: {', '.join(top_prot)}."
+            )
+
     return parrafos
 
 
@@ -585,6 +608,7 @@ def generar_predictivo_general(
     dist_riesgo: list,
     dist_paralelo: list,
     usuario_nombre: str = "",
+    importancias_globales: list | None = None,
 ) -> bytes:
     titulo = "Reporte Predictivo General"
     buf = BytesIO()
@@ -648,8 +672,60 @@ def generar_predictivo_general(
         ]
         elementos.append(_tabla(["Paralelo", "Area", "Total", "Alto Riesgo", "Critico"], paralelo_rows))
 
+    # 5. Variables Más Influyentes del Modelo
+    if importancias_globales:
+        elementos.extend(_seccion_numerada(
+            "5", "Variables Más Influyentes del Modelo",
+            "Factores con mayor peso predictivo en el modelo actual (importancia acumulada por variable).",
+        ))
+        interp_imp = _interpretar_importancias_globales(importancias_globales)
+        if interp_imp:
+            elementos.extend(_lista_hallazgos(interp_imp))
+        elementos.append(_subtitulo("5.1 Importancia por variable"))
+        imp_rows = [
+            [d.get("feature", ""), f"{d.get('importancia', 0):.1f}%"]
+            for d in importancias_globales
+        ]
+        elementos.append(_tabla(
+            ["Variable", "Importancia (%)"], imp_rows,
+            col_widths=[4.5 * inch, 2 * inch],
+        ))
+
     doc.build(elementos, onFirstPage=page_cb, onLaterPages=page_cb)
     return buf.getvalue()
+
+
+def _interpretar_importancias_globales(importancias: list[dict]) -> list[str]:
+    parrafos = []
+    if not importancias:
+        return parrafos
+    top3 = importancias[:3]
+    nombres = ", ".join(d.get("feature", "") for d in top3)
+    parrafos.append(
+        f"Las tres variables con mayor influencia en el modelo son: {nombres}. "
+        "Estas variables deben considerarse prioritarias al diseñar intervenciones de retención."
+    )
+    alto_academico = [d for d in importancias if d.get("feature", "") in (
+        "Promedio académico", "Materias reprobadas", "Materias cursadas", "Materias en 2do turno"
+    )]
+    alto_socio = [d for d in importancias if d.get("feature", "") in (
+        "Estrato socioeconómico", "Situación laboral", "Apoyo económico", "Con quién vive"
+    )]
+    if alto_academico and alto_socio:
+        parrafos.append(
+            "El modelo combina factores académicos y socioeconómicos, lo que sugiere "
+            "que las estrategias de retención deben ser integrales."
+        )
+    elif alto_academico:
+        parrafos.append(
+            "El rendimiento académico es el principal determinante del riesgo de abandono en este modelo."
+        )
+    elif alto_socio:
+        parrafos.append(
+            "Los factores socioeconómicos tienen mayor peso predictivo, indicando la necesidad "
+            "de apoyo extracurricular y económico."
+        )
+    return parrafos
 
 
 def generar_estudiantes_riesgo(
@@ -685,19 +761,32 @@ def generar_estudiantes_riesgo(
         elementos.append(Paragraph("No se encontraron estudiantes en riesgo alto o critico.", getSampleStyleSheet()["Normal"]))
     else:
         elementos.append(_subtitulo("2.1 Estudiantes identificados"))
+        page_w = letter[0] - _LEFT_MARGIN - _RIGHT_MARGIN
+        nombre_w = 1.9 * inch
+        fixed_w = (1.1 + 0.7 + 0.55 + 0.6 + 0.75) * inch + nombre_w
+        factor_w = page_w - fixed_w
+        _st_factor = ParagraphStyle("FactorCell", fontSize=7, leading=9, wordWrap="LTR")
+        _st_nombre = ParagraphStyle("NombreCell", fontSize=8, leading=10, wordWrap="LTR")
         rows = [
             [
                 e.get("codigo_estudiante", ""),
-                e.get("nombre_estudiante", ""),
+                Paragraph(e.get("nombre_estudiante", "").title(), _st_nombre),
                 e.get("paralelo", ""),
                 f"{e.get('probabilidad_abandono', 0):.1%}",
                 e.get("nivel_riesgo", ""),
                 str(e.get("fecha_prediccion", "")),
+                Paragraph(e.get("factores_principales", "—"), _st_factor),
             ]
             for e in estudiantes
         ]
         elementos.append(_tabla(
-            ["Codigo", "Nombre", "Paralelo", "Probabilidad", "Nivel", "Fecha"], rows,
+            ["Codigo", "Nombre", "Paralelo", "Prob.", "Nivel", "Fecha", "Factores Principales"],
+            rows,
+            col_widths=[
+                1.1 * inch, nombre_w, 0.7 * inch,
+                0.55 * inch, 0.6 * inch, 0.75 * inch,
+                factor_w,
+            ],
         ))
 
     doc.build(elementos, onFirstPage=page_cb, onLaterPages=page_cb)
@@ -736,29 +825,108 @@ def generar_por_paralelo(
         elementos.append(Paragraph("No se encontraron estudiantes en este paralelo.", getSampleStyleSheet()["Normal"]))
     else:
         elementos.append(_subtitulo("2.1 Estudiantes del paralelo"))
+        page_w = letter[0] - _LEFT_MARGIN - _RIGHT_MARGIN
+        nombre_w = 2.0 * inch
+        fixed_w = (1.1 + 0.75 + 0.55 + 0.6) * inch + nombre_w
+        factor_w = page_w - fixed_w
+        _st_factor = ParagraphStyle("FactorCell2", fontSize=7, leading=9, wordWrap="LTR")
+        _st_nombre2 = ParagraphStyle("NombreCell2", fontSize=8, leading=10, wordWrap="LTR")
         rows = [
             [
                 e.get("codigo_estudiante", ""),
-                e.get("nombre_completo", ""),
+                Paragraph(e.get("nombre_completo", "").title(), _st_nombre2),
                 f"{e.get('porcentaje_asistencia', 0):.1f}%",
                 f"{e.get('probabilidad', 0):.1%}" if e.get("probabilidad") is not None else "Sin prediccion",
                 e.get("nivel_riesgo", "Sin prediccion"),
+                Paragraph(e.get("factores_principales", "—"), _st_factor),
             ]
             for e in estudiantes
         ]
         elementos.append(_tabla(
-            ["Codigo", "Nombre", "Asistencia", "Prob. Abandono", "Nivel Riesgo"], rows,
+            ["Codigo", "Nombre", "Asistencia", "Prob.", "Nivel", "Factores Principales"],
+            rows,
+            col_widths=[
+                1.1 * inch, nombre_w, 0.75 * inch,
+                0.55 * inch, 0.6 * inch,
+                factor_w,
+            ],
         ))
 
     doc.build(elementos, onFirstPage=page_cb, onLaterPages=page_cb)
     return buf.getvalue()
 
 
+_ESTILO_SUBSUBTITULO = ParagraphStyle(
+    "SubSubtitulo",
+    fontSize=10,
+    leading=14,
+    textColor=DARK_TEXT,
+    fontName="Helvetica-Bold",
+    spaceBefore=8,
+    spaceAfter=6,
+    leftIndent=12,
+)
+
+
+def _tabla_asistencia_paralelo(materias: list[dict]) -> Table:
+    """Tabla de materias con fila de TOTAL al final."""
+    rows = []
+    tot_clases = tot_pres = tot_aus = 0
+    for m in materias:
+        tc = m.get("total_clases", 0)
+        pr = m.get("presentes", 0)
+        au = m.get("ausentes", 0)
+        pct = m.get("porcentaje_asistencia", 0)
+        rows.append([m.get("materia", ""), str(tc), str(pr), str(au), f"{pct:.1f}%"])
+        tot_clases += tc
+        tot_pres += pr
+        tot_aus += au
+
+    pct_total = (tot_pres / tot_clases * 100) if tot_clases > 0 else 0
+    total_row = ["TOTAL", str(tot_clases), str(tot_pres), str(tot_aus), f"{pct_total:.1f}%"]
+
+    headers = ["Materia", "Total Clases", "Presentes", "Ausentes", "% Asistencia"]
+    data = [headers] + rows + [total_row]
+    t = Table(data, repeatRows=1)
+    last = len(data) - 1
+    t.setStyle(TableStyle([
+        # Header
+        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 9),
+        ("TOPPADDING", (0, 0), (-1, 0), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+        ("LEFTPADDING", (0, 0), (-1, 0), 10),
+        # Data rows
+        ("FONTNAME", (0, 1), (-1, last - 1), "Helvetica"),
+        ("FONTSIZE", (0, 1), (-1, last - 1), 8),
+        ("TOPPADDING", (0, 1), (-1, last - 1), 8),
+        ("BOTTOMPADDING", (0, 1), (-1, last - 1), 8),
+        ("LEFTPADDING", (0, 1), (-1, last - 1), 10),
+        *[("BACKGROUND", (0, i), (-1, i), GRAY_LIGHT) for i in range(2, last, 2)],
+        # Total row
+        ("BACKGROUND", (0, last), (-1, last), NAVY),
+        ("TEXTCOLOR", (0, last), (-1, last), colors.white),
+        ("FONTNAME", (0, last), (-1, last), "Helvetica-Bold"),
+        ("FONTSIZE", (0, last), (-1, last), 8),
+        ("TOPPADDING", (0, last), (-1, last), 8),
+        ("BOTTOMPADDING", (0, last), (-1, last), 8),
+        ("LEFTPADDING", (0, last), (-1, last), 10),
+        # Grid
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    return t
+
+
 def generar_asistencia(
-    resumen_materias: list[dict],
+    grupos: list[dict],
     paralelo_nombre: str | None = None,
     usuario_nombre: str = "",
 ) -> bytes:
+    """Genera reporte de asistencia jerárquico: Semestre → Paralelo → Materias."""
     titulo = "Reporte de Asistencia"
     subtitulo = f"Paralelo: {paralelo_nombre}" if paralelo_nombre else "Todos los paralelos"
 
@@ -770,34 +938,44 @@ def generar_asistencia(
     # 1. Análisis de Asistencia
     elementos.extend(_seccion_numerada(
         "1", "Análisis de Asistencia",
-        "Indicadores destacados de asistencia por materia.",
+        "Resumen de asistencia por semestre, área y paralelo.",
     ))
-    interp = _interpretar_asistencia(resumen_materias)
-    if interp:
-        elementos.extend(_lista_hallazgos(interp))
+    elementos.extend(_resumen_texto_asistencia(grupos))
 
-    # 2. Resumen por Materia
-    elementos.extend(_seccion_numerada(
-        "2", "Resumen por Materia",
-        "Total de clases, presentes, ausentes y porcentaje de asistencia.",
-    ))
-    if not resumen_materias:
-        elementos.append(Paragraph("No se encontraron registros de asistencia.", getSampleStyleSheet()["Normal"]))
+    # 2. Detalle por Semestre y Paralelo
+    # Los elementos de la sección se guardan para incluirlos en el primer
+    # KeepTogether del loop, evitando que el título quede solo al fondo de página.
+    seccion2 = _seccion_numerada(
+        "2", "Detalle por Semestre y Paralelo",
+        "Asistencia por materia desglosada por semestre y paralelo.",
+    )
+    styles = getSampleStyleSheet()
+
+    if not grupos:
+        elementos.extend(seccion2)
+        elementos.append(Paragraph("No se encontraron registros de asistencia.", styles["Normal"]))
     else:
-        elementos.append(_subtitulo("2.1 Detalle por materia"))
-        rows = [
-            [
-                m.get("materia", ""),
-                str(m.get("total_clases", 0)),
-                str(m.get("presentes", 0)),
-                str(m.get("ausentes", 0)),
-                f"{m.get('porcentaje_asistencia', 0):.1f}%",
-            ]
-            for m in resumen_materias
-        ]
-        elementos.append(_tabla(
-            ["Materia", "Total Clases", "Presentes", "Ausentes", "% Asistencia"], rows,
-        ))
+        primer_bloque = True
+        semestres_vistos: list[str] = []
+        for g in grupos:
+            semestre = g.get("semestre", "Sin Semestre")
+            paralelo = g.get("paralelo", "")
+            materias = g.get("materias", [])
+
+            bloque = []
+            if primer_bloque:
+                bloque.extend(seccion2)
+                primer_bloque = False
+            if semestre not in semestres_vistos:
+                semestres_vistos.append(semestre)
+                bloque.append(_subtitulo(f"Semestre: {semestre}"))
+
+            bloque.extend([
+                Paragraph(f"Paralelo: {paralelo}", _ESTILO_SUBSUBTITULO),
+                _tabla_asistencia_paralelo(materias),
+                Spacer(1, 0.15 * inch),
+            ])
+            elementos.append(KeepTogether(bloque))
 
     doc.build(elementos, onFirstPage=page_cb, onLaterPages=page_cb)
     return buf.getvalue()
@@ -809,6 +987,7 @@ def generar_individual(
     alertas: list[dict],
     acciones: list[dict],
     usuario_nombre: str = "",
+    shap_factores: list[dict] | None = None,
 ) -> bytes:
     nombre = estudiante.get("nombre_completo", "")
     codigo = estudiante.get("codigo_estudiante", "")
@@ -824,7 +1003,7 @@ def generar_individual(
         "1", "Análisis de Situación",
         "Interpretación basada en predicciones, asistencia y alertas del estudiante.",
     ))
-    interp = _interpretar_individual(estudiante, predicciones, alertas, acciones)
+    interp = _interpretar_individual(estudiante, predicciones, alertas, acciones, shap_factores)
     if interp:
         elementos.extend(_lista_hallazgos(interp))
 
@@ -859,35 +1038,97 @@ def generar_individual(
         elementos.append(_tabla(["Campo", "Valor"], datos_rows, col_widths=[3 * inch, 4 * inch]))
     elementos.append(Spacer(1, 0.2 * inch))
 
-    # 3. Historial de Predicciones
+    # 3. Factores de Riesgo Identificados (SHAP)
     elementos.extend(_seccion_numerada(
-        "3", "Historial de Predicciones",
-        "Registro cronológico de predicciones realizadas.",
+        "3", "Factores de Riesgo Identificados",
+        "Variables que más influyen en la predicción de abandono de este estudiante.",
     ))
     styles = getSampleStyleSheet()
+    if shap_factores:
+        factores_riesgo = [f for f in shap_factores if f["tipo"] == "riesgo"]
+        factores_protectores = [f for f in shap_factores if f["tipo"] == "protector"]
+
+        if factores_riesgo:
+            elementos.append(_subtitulo("3.1 Factores que incrementan el riesgo"))
+            riesgo_rows = [
+                [
+                    f["nombre"],
+                    f["valor"],
+                    f"+{f['contribucion']:.4f}",
+                ]
+                for f in factores_riesgo
+            ]
+            t = _tabla(
+                ["Factor", "Valor del Estudiante", "Contribución"],
+                riesgo_rows,
+                col_widths=[2.8 * inch, 2.0 * inch, 1.5 * inch],
+            )
+            # Color rojo en columna de contribución
+            for i, _ in enumerate(factores_riesgo, start=1):
+                t.setStyle(TableStyle([("TEXTCOLOR", (2, i), (2, i), RED)]))
+            elementos.append(t)
+            elementos.append(Spacer(1, 0.12 * inch))
+
+        if factores_protectores:
+            elementos.append(_subtitulo("3.2 Factores protectores (reducen el riesgo)"))
+            prot_rows = [
+                [
+                    f["nombre"],
+                    f["valor"],
+                    f"{f['contribucion']:.4f}",
+                ]
+                for f in factores_protectores
+            ]
+            t2 = _tabla(
+                ["Factor", "Valor del Estudiante", "Contribución"],
+                prot_rows,
+                col_widths=[2.8 * inch, 2.0 * inch, 1.5 * inch],
+            )
+            for i, _ in enumerate(factores_protectores, start=1):
+                t2.setStyle(TableStyle([("TEXTCOLOR", (2, i), (2, i), GREEN)]))
+            elementos.append(t2)
+            elementos.append(Spacer(1, 0.12 * inch))
+
+        elementos.append(Paragraph(
+            "<i>Nota: La contribución indica cuánto empuja cada variable hacia el abandono (+) "
+            "o lo reduce (−).</i>",
+            ParagraphStyle("NotaShap", parent=getSampleStyleSheet()["Normal"],
+                           fontSize=8, textColor=GRAY, leading=12),
+        ))
+    else:
+        elementos.append(Paragraph(
+            "No se dispone de datos de features para esta predicción.",
+            styles["Normal"],
+        ))
+    elementos.append(Spacer(1, 0.2 * inch))
+
+    # 4. Historial de Predicciones
+    elementos.extend(_seccion_numerada(
+        "4", "Historial de Predicciones",
+        "Registro cronológico de predicciones realizadas.",
+    ))
     if predicciones:
-        elementos.append(_subtitulo("3.1 Predicciones registradas"))
+        elementos.append(_subtitulo("4.1 Predicciones registradas"))
         pred_rows = [
             [
                 str(p.get("fecha_prediccion", "")),
                 f"{p.get('probabilidad_abandono', 0):.1%}",
                 p.get("nivel_riesgo", ""),
-                p.get("tipo", ""),
             ]
             for p in predicciones
         ]
-        elementos.append(_tabla(["Fecha", "Probabilidad", "Nivel", "Tipo"], pred_rows))
+        elementos.append(_tabla(["Fecha", "Probabilidad", "Nivel"], pred_rows))
     else:
         elementos.append(Paragraph("Sin predicciones registradas.", styles["Normal"]))
     elementos.append(Spacer(1, 0.2 * inch))
 
-    # 4. Alertas
+    # 5. Alertas
     elementos.extend(_seccion_numerada(
-        "4", "Alertas",
+        "5", "Alertas",
         "Alertas generadas para el estudiante.",
     ))
     if alertas:
-        elementos.append(_subtitulo("4.1 Historial de alertas"))
+        elementos.append(_subtitulo("5.1 Historial de alertas"))
         alerta_rows = [
             [a.get("tipo", ""), a.get("nivel", ""), a.get("titulo", ""),
              a.get("estado", ""), str(a.get("fecha_creacion", ""))]
@@ -898,13 +1139,13 @@ def generar_individual(
         elementos.append(Paragraph("Sin alertas registradas.", styles["Normal"]))
     elementos.append(Spacer(1, 0.2 * inch))
 
-    # 5. Acciones Tomadas
+    # 6. Acciones Tomadas
     if acciones:
         elementos.extend(_seccion_numerada(
-            "5", "Acciones Tomadas",
+            "6", "Acciones Tomadas",
             "Acciones de seguimiento realizadas con el estudiante.",
         ))
-        elementos.append(_subtitulo("5.1 Registro de acciones"))
+        elementos.append(_subtitulo("6.1 Registro de acciones"))
         accion_rows = [
             [str(a.get("fecha", "")), a.get("descripcion", "")]
             for a in acciones

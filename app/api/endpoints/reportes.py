@@ -3,10 +3,10 @@ import math
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from io import BytesIO
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,11 +18,13 @@ from app.models import (
     Area,
     Asistencia,
     Estudiante,
+    MallaCurricular,
     Materia,
     NivelRiesgo,
     Paralelo,
     Prediccion,
     ReporteGenerado,
+    Semestre,
     Usuario,
 )
 from app.schemas.reporte import (
@@ -137,6 +139,7 @@ async def historial_reportes(
 )
 async def generar_reporte(
     body: ReporteGenerarRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
@@ -146,17 +149,18 @@ async def generar_reporte(
         raise HTTPException(status_code=400, detail="estudiante_id es requerido para el reporte individual")
 
     usuario_nombre = current_user.nombre
+    svc = getattr(request.app.state, "prediccion_service", None)
 
     if body.tipo == "predictivo_general":
-        pdf_bytes, nombre = await _generar_predictivo_general(db, body, usuario_nombre)
+        pdf_bytes, nombre = await _generar_predictivo_general(db, body, usuario_nombre, svc)
     elif body.tipo == "estudiantes_riesgo":
-        pdf_bytes, nombre = await _generar_estudiantes_riesgo(db, body, usuario_nombre)
+        pdf_bytes, nombre = await _generar_estudiantes_riesgo(db, body, usuario_nombre, svc)
     elif body.tipo == "por_paralelo":
-        pdf_bytes, nombre = await _generar_por_paralelo(db, body, usuario_nombre)
+        pdf_bytes, nombre = await _generar_por_paralelo(db, body, usuario_nombre, svc)
     elif body.tipo == "asistencia":
         pdf_bytes, nombre = await _generar_asistencia(db, body, usuario_nombre)
     elif body.tipo == "individual":
-        pdf_bytes, nombre = await _generar_individual(db, body, usuario_nombre)
+        pdf_bytes, nombre = await _generar_individual(db, body, usuario_nombre, svc)
     else:
         raise HTTPException(status_code=400, detail="Tipo de reporte no válido")
 
@@ -183,7 +187,7 @@ async def generar_reporte(
 # Funciones internas para cada tipo de reporte
 # ==================================================================
 
-async def _generar_predictivo_general(db: AsyncSession, body: ReporteGenerarRequest, usuario_nombre: str = "") -> tuple[bytes, str]:
+async def _generar_predictivo_general(db: AsyncSession, body: ReporteGenerarRequest, usuario_nombre: str = "", svc=None) -> tuple[bytes, str]:
     """Reporte predictivo general: resumen + distribución riesgo + distribución paralelo."""
     # Subquery: última predicción por estudiante (por fecha_prediccion DESC, id DESC)
     subq = (
@@ -268,11 +272,17 @@ async def _generar_predictivo_general(db: AsyncSession, body: ReporteGenerarRequ
 
     dist_paralelo = list(por_paralelo.values())
 
-    pdf = reporte_pdf_service.generar_predictivo_general(resumen, dist_riesgo, dist_paralelo, usuario_nombre=usuario_nombre)
+    importancias = svc.importancias_globales(top_n=8) if svc else []
+
+    pdf = reporte_pdf_service.generar_predictivo_general(
+        resumen, dist_riesgo, dist_paralelo,
+        usuario_nombre=usuario_nombre,
+        importancias_globales=importancias,
+    )
     return pdf, "Reporte Predictivo General"
 
 
-async def _generar_estudiantes_riesgo(db: AsyncSession, body: ReporteGenerarRequest, usuario_nombre: str = "") -> tuple[bytes, str]:
+async def _generar_estudiantes_riesgo(db: AsyncSession, body: ReporteGenerarRequest, usuario_nombre: str = "", svc=None) -> tuple[bytes, str]:
     """Estudiantes con riesgo Alto o Critico."""
     # Subquery: última predicción por estudiante (por fecha_prediccion DESC, id DESC)
     subq = (
@@ -304,20 +314,31 @@ async def _generar_estudiantes_riesgo(db: AsyncSession, body: ReporteGenerarRequ
     if body.nivel_riesgo:
         q = q.where(Prediccion.nivel_riesgo == body.nivel_riesgo)
 
+    q = q.order_by(Prediccion.probabilidad_abandono.desc())
     result = await db.execute(q)
     preds = result.scalars().unique().all()
 
-    estudiantes = [
-        {
+    estudiantes = []
+    for p in preds:
+        factores_top2 = []
+        if svc and p.features_utilizadas:
+            try:
+                # top_n=15 para obtener todos los features agrupados; luego filtrar por tipo riesgo
+                # (ordenar por |contribución| y tomar top-2 directamente fallaría si los 2 mayores son protectores)
+                todos = svc.explicar_shap(p.features_utilizadas, top_n=15)
+                riesgo = sorted([f for f in todos if f["tipo"] == "riesgo"], key=lambda x: -x["contribucion"])
+                factores_top2 = [f["nombre"] for f in riesgo[:2]]
+            except Exception as e:
+                print(f"[SHAP] Error estudiante {p.estudiante.codigo_estudiante}: {e}", flush=True)
+        estudiantes.append({
             "codigo_estudiante": p.estudiante.codigo_estudiante,
             "nombre_estudiante": f"{p.estudiante.nombre} {p.estudiante.apellido}".strip(),
             "paralelo": p.estudiante.paralelo.nombre if p.estudiante.paralelo else "",
             "probabilidad_abandono": p.probabilidad_abandono,
             "nivel_riesgo": p.nivel_riesgo,
-            "fecha_prediccion": str(p.fecha_prediccion),
-        }
-        for p in preds
-    ]
+            "fecha_prediccion": p.fecha_prediccion.strftime("%d/%m/%Y"),
+            "factores_principales": ", ".join(factores_top2) if factores_top2 else "—",
+        })
 
     # Total de estudiantes con predicción (para contexto interpretativo)
     subq_total = (
@@ -341,7 +362,7 @@ async def _generar_estudiantes_riesgo(db: AsyncSession, body: ReporteGenerarRequ
     return pdf, "Estudiantes en Riesgo"
 
 
-async def _generar_por_paralelo(db: AsyncSession, body: ReporteGenerarRequest, usuario_nombre: str = "") -> tuple[bytes, str]:
+async def _generar_por_paralelo(db: AsyncSession, body: ReporteGenerarRequest, usuario_nombre: str = "", svc=None) -> tuple[bytes, str]:
     """Reporte desglosado por paralelo."""
     # Info del paralelo
     q_par = (
@@ -414,12 +435,23 @@ async def _generar_por_paralelo(db: AsyncSession, body: ReporteGenerarRequest, u
     estudiantes_lista = []
     for e in estudiantes_db:
         pred = preds_map.get(e.id)
+        factores_str = "—"
+        if svc and pred and pred.features_utilizadas and pred.nivel_riesgo in ("Alto", "Critico"):
+            try:
+                # top_n=15 para obtener todos los features agrupados; luego filtrar por tipo riesgo
+                todos = svc.explicar_shap(pred.features_utilizadas, top_n=15)
+                riesgo = sorted([f for f in todos if f["tipo"] == "riesgo"], key=lambda x: -x["contribucion"])
+                nombres = [f["nombre"] for f in riesgo[:2]]
+                factores_str = ", ".join(nombres) if nombres else "—"
+            except Exception as e:
+                print(f"[SHAP] Error estudiante {e}: {e}", flush=True)
         estudiantes_lista.append({
             "codigo_estudiante": e.codigo_estudiante,
             "nombre_completo": f"{e.nombre} {e.apellido}".strip(),
             "porcentaje_asistencia": asist_map.get(e.id, 0),
             "probabilidad": pred.probabilidad_abandono if pred else None,
             "nivel_riesgo": pred.nivel_riesgo if pred else "Sin prediccion",
+            "factores_principales": factores_str,
         })
 
     pdf = reporte_pdf_service.generar_por_paralelo(paralelo_info, estudiantes_lista, usuario_nombre=usuario_nombre)
@@ -427,51 +459,94 @@ async def _generar_por_paralelo(db: AsyncSession, body: ReporteGenerarRequest, u
 
 
 async def _generar_asistencia(db: AsyncSession, body: ReporteGenerarRequest, usuario_nombre: str = "") -> tuple[bytes, str]:
-    """Reporte de asistencia por materia."""
+    """Reporte de asistencia agrupado por semestre → paralelo → materia."""
     paralelo_nombre = None
 
     q = (
         select(
+            func.coalesce(Semestre.nombre, "Sin Semestre").label("semestre"),
+            Paralelo.id.label("paralelo_id"),
+            Paralelo.nombre.label("paralelo"),
+            Area.nombre.label("area"),
             Materia.nombre.label("materia"),
             func.count().label("total_clases"),
             func.count().filter(Asistencia.estado == "Presente").label("presentes"),
             func.count().filter(Asistencia.estado == "Ausente").label("ausentes"),
         )
-        .join(Asistencia, Asistencia.materia_id == Materia.id)
+        .join(Estudiante, Estudiante.id == Asistencia.estudiante_id)
+        .join(Paralelo, Paralelo.id == Estudiante.paralelo_id)
+        .outerjoin(Semestre, Semestre.id == Paralelo.semestre_id)
+        .join(Area, Area.id == Paralelo.area_id)
+        .join(Materia, Materia.id == Asistencia.materia_id)
+        # Solo materias que pertenecen a la malla del area+semestre del paralelo
+        .join(
+            MallaCurricular,
+            and_(
+                MallaCurricular.materia_id == Materia.id,
+                MallaCurricular.area_id == Paralelo.area_id,
+                or_(
+                    Paralelo.semestre_id == None,
+                    MallaCurricular.semestre_id == Paralelo.semestre_id,
+                ),
+            ),
+        )
     )
 
     if body.paralelo_id:
-        q = q.join(Estudiante, Estudiante.id == Asistencia.estudiante_id).where(
-            Estudiante.paralelo_id == body.paralelo_id
+        q = q.where(Estudiante.paralelo_id == body.paralelo_id)
+        result_par = await db.execute(
+            select(Paralelo.nombre, Area.nombre.label("area_nombre"))
+            .join(Area, Area.id == Paralelo.area_id)
+            .where(Paralelo.id == body.paralelo_id)
         )
-        # Obtener nombre del paralelo
-        result = await db.execute(select(Paralelo.nombre).where(Paralelo.id == body.paralelo_id))
-        paralelo_nombre = result.scalar_one_or_none()
+        row_par = result_par.one_or_none()
+        if row_par:
+            paralelo_nombre = f"{row_par.nombre} ({row_par.area_nombre})"
 
-    q = q.group_by(Materia.nombre).order_by(Materia.nombre)
+    q = q.group_by(
+        Semestre.nombre,
+        Paralelo.id,
+        Paralelo.nombre,
+        Area.nombre,
+        Materia.nombre,
+    ).order_by(
+        func.coalesce(Semestre.nombre, "Sin Semestre"),
+        Area.nombre,
+        Paralelo.nombre,
+        Materia.nombre,
+    )
+
     result = await db.execute(q)
-    rows = result.all()
 
-    resumen = []
-    for r in rows:
-        total = r.total_clases or 0
-        presentes = r.presentes or 0
-        ausentes = r.ausentes or 0
+    grupos: dict[tuple, dict] = {}
+    for row in result.all():
+        key = (row.semestre, row.paralelo_id)
+        if key not in grupos:
+            grupos[key] = {
+                "semestre": row.semestre,
+                "paralelo": f"{row.paralelo} ({row.area})",
+                "materias": [],
+            }
+        total = row.total_clases or 0
+        presentes = row.presentes or 0
+        ausentes = row.ausentes or 0
         pct = (presentes / total * 100) if total > 0 else 0
-        resumen.append({
-            "materia": r.materia,
+        grupos[key]["materias"].append({
+            "materia": row.materia,
             "total_clases": total,
             "presentes": presentes,
             "ausentes": ausentes,
             "porcentaje_asistencia": pct,
         })
 
-    pdf = reporte_pdf_service.generar_asistencia(resumen, paralelo_nombre, usuario_nombre=usuario_nombre)
+    grupos_lista = list(grupos.values())
+
+    pdf = reporte_pdf_service.generar_asistencia(grupos_lista, paralelo_nombre, usuario_nombre=usuario_nombre)
     nombre = f"Reporte Asistencia {paralelo_nombre}" if paralelo_nombre else "Reporte Asistencia General"
     return pdf, nombre
 
 
-async def _generar_individual(db: AsyncSession, body: ReporteGenerarRequest, usuario_nombre: str = "") -> tuple[bytes, str]:
+async def _generar_individual(db: AsyncSession, body: ReporteGenerarRequest, usuario_nombre: str = "", svc=None) -> tuple[bytes, str]:
     """Reporte individual de un estudiante."""
     # Estudiante con paralelo
     q = (
@@ -577,5 +652,18 @@ async def _generar_individual(db: AsyncSession, body: ReporteGenerarRequest, usu
             for a in result.scalars().all()
         ]
 
-    pdf = reporte_pdf_service.generar_individual(est_data, predicciones, alertas, acciones, usuario_nombre=usuario_nombre)
+    shap_factores = []
+    if svc and predicciones:
+        feats = predicciones[0].get("features_utilizadas") or {}
+        if feats:
+            try:
+                shap_factores = svc.explicar_shap(feats, top_n=5)
+            except Exception:
+                pass
+
+    pdf = reporte_pdf_service.generar_individual(
+        est_data, predicciones, alertas, acciones,
+        usuario_nombre=usuario_nombre,
+        shap_factores=shap_factores,
+    )
     return pdf, f"Reporte Individual {nombre_completo}"
