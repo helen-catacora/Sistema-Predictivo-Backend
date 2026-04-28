@@ -603,6 +603,25 @@ def _interpretar_individual(
 # Generadores de cada tipo de reporte
 # ═════════════════════════════════════════════════════════════════════
 
+_INTERPRETACIONES_FEATURES = {
+    "Materias cursadas":      "Número de materias inscritas. Una carga muy alta puede generar sobrecarga académica.",
+    "Materias reprobadas":    "Cantidad de materias no aprobadas. Un número elevado indica dificultades académicas acumuladas.",
+    "Materias en 2do turno":  "Materias cursadas en segunda instancia (recuperación). Refleja bajo rendimiento previo.",
+    "Promedio académico":     "Calificación promedio general. Un promedio bajo se asocia directamente con mayor riesgo de abandono.",
+    "Edad":                   "Edad del estudiante. Ciertos rangos etarios presentan mayor vulnerabilidad al abandono.",
+    "Grado":                  "Nivel académico actual dentro de la carrera. Los primeros grados concentran la mayor deserción.",
+    "Género":                 "Sexo del estudiante. Permite identificar patrones de abandono diferenciados por género.",
+    "Semestre":               "Semestre en curso. Los semestres iniciales presentan la mayor tasa histórica de abandono.",
+    "Carrera":                "Programa académico del estudiante. Algunas carreras presentan mayor índice de deserción.",
+    "Estrato socioeconómico": "Nivel socioeconómico del hogar. Estratos bajos incrementan el riesgo por limitaciones económicas.",
+    "Situación laboral":      "Condición laboral (trabaja/no trabaja). Trabajar mientras estudia dificulta la continuidad académica.",
+    "Con quién vive":         "Entorno de convivencia (familia, solo, pareja). Incide en la estabilidad emocional y el apoyo disponible.",
+    "Apoyo económico":        "Si recibe apoyo externo (beca, familia). La ausencia de apoyo económico eleva el riesgo de abandono.",
+    "Modalidad de ingreso":   "Forma de ingreso a la institución (examen, convenio, etc.). Refleja el nivel de preparación inicial.",
+    "Tipo de colegio":        "Tipo de colegio de procedencia (público/privado). Puede indicar diferencias en la formación previa.",
+}
+
+
 def generar_predictivo_general(
     resumen: dict,
     dist_riesgo: list,
@@ -683,12 +702,19 @@ def generar_predictivo_general(
             elementos.extend(_lista_hallazgos(interp_imp))
         elementos.append(_subtitulo("5.1 Importancia por variable"))
         imp_rows = [
-            [d.get("feature", ""), f"{d.get('importancia', 0):.1f}%"]
+            [
+                d.get("feature", ""),
+                f"{d.get('importancia', 0):.1f}%",
+                Paragraph(
+                    _INTERPRETACIONES_FEATURES.get(d.get("feature", ""), "—"),
+                    _ESTILO_INTERPRETACION,
+                ),
+            ]
             for d in importancias_globales
         ]
         elementos.append(_tabla(
-            ["Variable", "Importancia (%)"], imp_rows,
-            col_widths=[4.5 * inch, 2 * inch],
+            ["Variable", "Importancia (%)", "Interpretación"], imp_rows,
+            col_widths=[2.0 * inch, 1.2 * inch, 3.8 * inch],
         ))
 
     doc.build(elementos, onFirstPage=page_cb, onLaterPages=page_cb)
@@ -703,7 +729,7 @@ def _interpretar_importancias_globales(importancias: list[dict]) -> list[str]:
     nombres = ", ".join(d.get("feature", "") for d in top3)
     parrafos.append(
         f"Las tres variables con mayor influencia en el modelo son: {nombres}. "
-        "Estas variables deben considerarse prioritarias al diseñar intervenciones de retención."
+        "Estas variables concentran la mayor influencia predictiva sobre el riesgo de abandono en la población analizada."
     )
     alto_academico = [d for d in importancias if d.get("feature", "") in (
         "Promedio académico", "Materias reprobadas", "Materias cursadas", "Materias en 2do turno"
@@ -712,18 +738,25 @@ def _interpretar_importancias_globales(importancias: list[dict]) -> list[str]:
         "Estrato socioeconómico", "Situación laboral", "Apoyo económico", "Con quién vive"
     )]
     if alto_academico and alto_socio:
+        nombres_acad = ", ".join(d.get("feature", "") for d in alto_academico)
+        nombres_socio = ", ".join(d.get("feature", "") for d in alto_socio)
         parrafos.append(
-            "El modelo combina factores académicos y socioeconómicos, lo que sugiere "
-            "que las estrategias de retención deben ser integrales."
+            f"El riesgo de abandono está influenciado por factores académicos ({nombres_acad}) "
+            f"y socioeconómicos ({nombres_socio}). El modelo identifica ambas dimensiones como "
+            "determinantes del riesgo de abandono en los estudiantes analizados."
         )
     elif alto_academico:
+        nombres_acad = ", ".join(d.get("feature", "") for d in alto_academico)
         parrafos.append(
-            "El rendimiento académico es el principal determinante del riesgo de abandono en este modelo."
+            f"El rendimiento académico ({nombres_acad}) es el principal factor de riesgo "
+            "en este modelo para la población analizada."
         )
     elif alto_socio:
+        nombres_socio = ", ".join(d.get("feature", "") for d in alto_socio)
         parrafos.append(
-            "Los factores socioeconómicos tienen mayor peso predictivo, indicando la necesidad "
-            "de apoyo extracurricular y económico."
+            f"Los factores socioeconómicos ({nombres_socio}) predominan en el riesgo de abandono. "
+            "El modelo señala que las condiciones externas al ámbito académico tienen mayor peso "
+            "predictivo en la población analizada."
         )
     return parrafos
 

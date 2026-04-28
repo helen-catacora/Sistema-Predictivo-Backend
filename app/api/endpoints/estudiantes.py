@@ -622,7 +622,7 @@ async def importar_estudiantes(
 
     # Áreas
     res = await db.execute(select(Area))
-    areas_cache: dict[str, Area] = {a.nombre: a for a in res.scalars().all()}
+    areas_cache: dict[str, Area] = {a.nombre.strip().lower(): a for a in res.scalars().all()}
 
     # Semestres
     res = await db.execute(select(Semestre))
@@ -661,11 +661,11 @@ async def importar_estudiantes(
     # 2.1 Áreas únicas
     areas_excel = {str(v).strip() for v in df["Area"].dropna().unique() if str(v).strip()}
     for nombre_area in areas_excel:
-        if nombre_area not in areas_cache:
+        if nombre_area.lower() not in areas_cache:
             area = Area(nombre=nombre_area)
             db.add(area)
             await db.flush()
-            areas_cache[nombre_area] = area
+            areas_cache[nombre_area.lower()] = area
             resumen.areas_creadas += 1
 
     # 2.2 Semestres únicos
@@ -690,7 +690,7 @@ async def importar_estudiantes(
             paralelos_unicos.add((p_nombre, a_nombre))
 
     for p_nombre, a_nombre in paralelos_unicos:
-        area_obj = areas_cache.get(a_nombre)
+        area_obj = areas_cache.get(a_nombre.lower() if a_nombre else a_nombre)
         if not area_obj:
             continue
         # Resolver semestre_id si hay columna Semestre en alguna fila con este paralelo+area
@@ -752,7 +752,7 @@ async def importar_estudiantes(
             continue
 
         # Resolver paralelo
-        area_obj = areas_cache.get(area_nombre)
+        area_obj = areas_cache.get(area_nombre.lower() if area_nombre else area_nombre)
         if not area_obj:
             errores.append(ImportacionErrorItem(
                 fila=fila_num, codigo=codigo,
@@ -872,6 +872,7 @@ async def importar_estudiantes(
                     )
                     db.add(mc)
                     await db.flush()
+                    await nested_mc.commit()
                     malla_cache[malla_key] = mc
                     resumen.mallas_creadas += 1
                 except Exception:
@@ -888,6 +889,7 @@ async def importar_estudiantes(
                 )
                 db.add(insc)
                 await db.flush()
+                await nested.commit()
                 resumen.inscripciones_creadas += 1
             except Exception:
                 await nested.rollback()
